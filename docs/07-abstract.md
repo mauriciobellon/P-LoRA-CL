@@ -1,9 +1,0 @@
-# Abstract
-
-## Resumo em inglês
-
-This study investigates continual learning in Natural Language Processing, focusing on mitigating catastrophic forgetting when training models on sequences of tasks. It starts from the stability-plasticity dilemma and the practical context where old data cannot be fully stored, whether due to cost, privacy, or usage policies. In this scenario, we seek to preserve performance on previous tasks while maintaining the ability to adapt to new distributions, with parsimonious use of parameters and computation. We propose a hybrid architecture that combines progressive modularization inspired by progressive neural networks, low-rank adaptations with orthogonal constraints, elastic weight consolidation, and generative replay without raw data retention, aiming to balance plasticity and stability with parametric efficiency. The approach employs moderate-sized base models, with task-specific LoRA adapters and orthogonality to separate update subspaces; applies EWC to partially unfrozen shared components; and interleaves synthetic batches to recover prior knowledge. The experimental protocol contemplates a sequence of NLP tasks with cumulative re-evaluation after each stage, employing metrics such as average accuracy, forgetting rate, forward and backward transfers, parametric growth and computational cost, in addition to ablations to isolate the effect of each mechanism. We expect to demonstrate reduced forgetting without degrading plasticity, offering measurable marginal gains when each component is activated, with moderate parametric overhead per task. The main expected contribution is an integrated, original and parameter-efficient arrangement for continual learning in NLP, accompanied by a reproducible protocol and engineering guidelines.
-
-## Keywords
-
-Continual Learning; Orthogonal LoRA; EWC; Generative Replay; NLP

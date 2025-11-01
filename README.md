@@ -1,3 +1,1 @@
-# P-LoRA-CL
-
-Prompt and Low-Rank Adaptation Strategies for Efficient Continual Learning in NLP
+# Rede Progressiva com LoRA Ortogonal para Aprendizado Contínuo
