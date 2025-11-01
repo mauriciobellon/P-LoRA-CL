@@ -1,16 +1,62 @@
 # Apêndices
 
 ## Apêndice A: Configurações completas de hiperparâmetros
-[A preencher]
+Exemplo (valores de referência; ajustar por tarefa):
+- Otimizador: `AdamW` (β1=0,9; β2=0,999; weight_decay=0,01)
+- Taxa de aprendizado base (LoRA): 1e-4 (varrer {5e-5, 1e-4, 2e-4})
+- Warmup: 5% dos passos
+- Batch size efetivo: 64 (com acúmulo de gradiente)
+- Comprimento máximo de sequência: {256, 384, 512} por dataset
+- LoRA: r∈{4,8}, α=16, dropout=0,05, alvos={Q,K,V,O} (ou MLP)
+- Ortogonalidade (λ_ortho): {0,01; 0,05; 0,1}
+- EWC (λ_ewc): {10; 50; 100}, Fisher diagonal, amostras=2k
+- Replay gerativo: proporção do batch {0,1; 0,2; 0,3}, temperatura {0,7; 0,9}
 
 ## Apêndice B: Pseudocódigo dos algoritmos principais
-[A preencher]
+Algoritmo 1 — Treinamento sequencial com O-LoRA, EWC e replay gerativo
+1. para k = 1..K (tarefas)
+2.   inicializar adaptadores LoRA para T_k (ΔW=0)
+3.   congelar adaptadores de T_1..T_{k-1}
+4.   se k>1: estimar lote(s) sintéticos S via gerador (prompts por classe)
+5.   para cada batch B de T_k: formar B' = mix(B, S, p_replay)
+6.     L = L_ce(B') + λ_ortho·R_ortho(ΔW_k, {ΔW_i}_{i<k}) + λ_ewc·R_ewc(θ)
+7.     atualizar {ΔW_k} e pesos destravados com otimizador
+8.   estimar Fisher em T_k para EWC
+9.   avaliar em T_1..T_k (ACC, BWT, FWT, Forgetting)
 
 ## Apêndice C: Tabelas detalhadas de resultados por tarefa
-[A preencher]
+Sugerido (exemplo de colunas):
+- Tarefa | ACC@t | Best@t | Forgetting | BWT | FWT | Parâmetros (+%) | Tempo (min) | Pico VRAM (GB)
 
 ## Apêndice D: Análise adicional de ablação
-[A preencher]
+Plano de ablações:
+- Sem O-LoRA (LoRA padrão)
+- Sem EWC (λ_ewc=0)
+- Sem replay gerativo (p_replay=0)
+- Sem conexões laterais
+- Apenas O-LoRA; Apenas EWC; Apenas replay
+- Variação de r (LoRA) e λ_ortho
 
 ## Apêndice E: Instruções de reprodução dos experimentos
-[A preencher]
+Pré-requisitos
+- Python 3.11 com `uv` instalado
+- GPU com 16GB VRAM (recomendado) e drivers atualizados
+
+Ambiente
+- `uv python install 3.11`
+- `uv venv && source .venv/bin/activate`
+- `uv pip install -r requirements.txt`
+
+Formatação e lint
+- `ruff format` e `ruff check src tests` (aplicar fixes quando indicado)
+
+Testes rápidos
+- `uv run pytest tests -q`
+
+Execução (placeholder; CLI a ser integrada)
+- `uv run python -m plora_cl.cli.train --config experiments/<tarefa>/config.yaml`
+
+Protocolos
+- Registrar seeds, commits e hashes de datasets
+- Gerar tabelas (ACC, BWT, FWT, Forgetting) após cada tarefa
+- Salvar métricas e artefatos leves em `artifacts/` (checkpoints grandes: armazenamento externo)

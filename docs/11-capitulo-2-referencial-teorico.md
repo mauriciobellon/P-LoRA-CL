@@ -6,7 +6,11 @@
 
 O aprendizado contínuo, também referido como continual learning ou lifelong learning, consiste na capacidade de um sistema de inteligência artificial aprender novas tarefas de forma sequencial, acumulando conhecimento ao longo do tempo sem esquecer o que foi aprendido anteriormente. Diferentemente do fine-tuning tradicional, onde um conjunto de dados é fixo e o modelo é ajustado apenas uma vez, no aprendizado contínuo o modelo enfrenta desafios significativos ao adaptar-se a distribuições que evoluem sem reiniciar o treinamento do zero para cada novo contexto.
 
+Panoramas recentes oferecem taxonomias abrangentes de métodos (regularização, arquitetura, replay) e protocolos de avaliação, destacando dificuldades de comparação e a necessidade de métricas padronizadas (De Lange et al., 2021; Parisi et al., 2019).
+
 O principal desafio é o esquecimento catastrófico — a tendência de redes neurais esquecerem abruptamente tarefas antigas ao aprender tarefas novas. Esse fenômeno foi documentado desde os primórdios das redes neurais e permanece um obstáculo central em sistemas adaptativos. Uma arquitetura de aprendizado contínuo deve equilibrar plasticidade (para incorporar novos conhecimentos) e estabilidade (para reter conhecimentos prévios), evitando que gradientes das tarefas recentes sobrescrevam parâmetros importantes das tarefas passadas.
+
+Métricas clássicas para quantificar retenção e transferência incluem Acurácia Média (ACC), Backward Transfer (BWT), Forward Transfer (FWT) e Forgetting, popularizadas por Lopez-Paz & Ranzato (2017) e sistematizadas por van de Ven & Tolias (2019).
 
 ### Dilema estabilidade-plasticidade
 
@@ -19,6 +23,8 @@ O equilíbrio ótimo depende de múltiplos fatores, incluindo a similaridade ent
 O esquecimento catastrófico ocorre quando o treinamento em uma nova tarefa altera parâmetros que eram críticos para tarefas anteriores. Em redes neurais profundas, onde milhões de parâmetros são compartilhados entre diferentes camadas e funções, essa interferência pode ocorrer em múltiplos níveis. O problema é especialmente pronunciado quando tarefas novas e antigas requerem atualizações conflitantes dos mesmos parâmetros.
 
 A natureza do esquecimento catastrófico em Transformers é particularmente complexa devido à arquitetura de atenção e às múltiplas camadas de representação. Parâmetros compartilhados em embeddings, camadas de atenção e redes feed-forward podem ser afetados de forma diferente dependendo de como as tarefas utilizam essas representações. Compreender e mitigar essas interferências requer abordagens que identifiquem e protejam parâmetros críticos ou que isolam atualizações para diferentes tarefas.
+
+Entre os mecanismos de mitigação, destacam-se: (i) isolamento estrutural via PNNs (Rusu et al., 2016); (ii) regularização baseada em informação via EWC (Kirkpatrick et al., 2017; Schwarz et al., 2018); (iii) replay (Shin et al., 2017), inclusive sem dados brutos; e (iv) restrições ortogonais sobre atualizações/espelhos de parâmetros (Zeng et al., 2019; Farajtabar et al., 2019).
 
 ### Contexto específico do PLN (diversidade de tarefas, domínios, ambiguidade linguística)
 

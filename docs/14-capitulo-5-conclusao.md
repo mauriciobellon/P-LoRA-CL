@@ -4,27 +4,27 @@
 
 ### Resumo dos principais achados
 
-Este trabalho investigou a viabilidade e efetividade de uma arquitetura híbrida para aprendizado contínuo em PLN que combina quatro mecanismos complementares: redes neurais progressivas (PNN) através de modularização leve, adaptações de baixo ranque com restrição ortogonal (O-LoRA), consolidação elástica de pesos (EWC), e replay gerativo parcimonioso. Os resultados experimentais demonstram que a integração sistemática desses mecanismos oferece proteção efetiva contra esquecimento catastrófico enquanto mantém eficiência paramétrica e viabilidade computacional.
+Este trabalho investigou a viabilidade e efetividade de uma arquitetura híbrida para aprendizado contínuo em PLN que combina quatro mecanismos complementares: redes neurais progressivas (PNN) através de modularização leve, adaptações de baixo ranque com restrição ortogonal (O-LoRA), consolidação elástica de pesos (EWC), e replay gerativo parcimonioso. Quando executados, os experimentos deverão quantificar em que medida a integração desses mecanismos oferece proteção contra esquecimento catastrófico mantendo eficiência paramétrica e viabilidade computacional.
 
-A análise empírica em sequência de cinco tarefas de classificação textual (AG News, Yelp Polarity, Amazon Reviews, DBPedia, Yahoo Answers) revelou que a arquitetura proposta alcança Average Accuracy significativamente superior aos baselines de fine-tuning sequencial e LoRA único sequencial, enquanto mantém crescimento paramétrico moderado (<2% por tarefa) e overhead computacional aceitável para execução em hardware intermediário.
+A análise empírica em sequência de cinco tarefas de classificação textual (AG News, Yelp Polarity, Amazon Reviews, DBPedia, Yahoo Answers) comparará a proposta a baselines de fine-tuning sequencial e LoRA sequencial, bem como a um upper bound de joint training, reportando ACC, BWT, FWT e crescimento paramétrico por tarefa.
 
 ### Redução do esquecimento catastrófico
 
-Os resultados quantificam redução substancial no esquecimento catastrófico quando comparada aos baselines. Métricas de Backward Transfer (BWT) e Forgetting mostram que a arquitetura proposta reduz consistentemente a degradação de desempenho em tarefas anteriores, mantendo uma fração significativa do desempenho pico mesmo após aprender múltiplas tarefas subsequentes.
+Resultados esperados incluem redução substancial no esquecimento catastrófico quando comparada aos baselines. Métricas de Backward Transfer (BWT) e Forgetting deverão indicar preservação superior do desempenho em tarefas anteriores em cenários onde a ortogonalidade e o EWC são efetivos.
 
-A análise de ablação revelou que cada componente individual contribui para essa redução, mas a integração completa oferece ganhos superiores à soma das partes, indicando sinergias positivas entre os mecanismos. O-LoRA fornece isolamento estrutural eficiente, EWC protege componentes compartilhados críticos, replay gerativo reforça conhecimentos através de dados sintéticos, e conexões laterais promovem transferência positiva.
+A análise de ablação deverá evidenciar contribuições individuais e sinergias entre mecanismos. O-LoRA tende a reduzir interferência entre tarefas; EWC pode proteger componentes compartilhados críticos; replay gerativo reforça conhecimentos; e conexões laterais promovem transferência positiva.
 
 ### Manutenção da plasticidade
 
-Além de reduzir esquecimento, a arquitetura proposta demonstra capacidade de manter plasticidade para aprender novas tarefas efetivamente. Métricas de Forward Transfer (FWT) mostram que conhecimento de tarefas anteriores facilita aprendizado de tarefas futuras, especialmente quando conexões laterais são habilitadas. O desempenho em tarefas novas não é comprometido pelas restrições impostas para proteger tarefas antigas.
+Além de reduzir esquecimento, a arquitetura busca manter plasticidade para aprender novas tarefas efetivamente. Métricas de Forward Transfer (FWT) quantificarão em que medida conhecimento de tarefas anteriores facilita aprendizado de tarefas futuras, especialmente quando conexões laterais são habilitadas.
 
 O equilíbrio entre estabilidade e plasticidade é alcançado através de calibração cuidadosa de hiperparâmetros, permitindo que o modelo adapte-se seletivamente a novas distribuições enquanto protege parâmetros críticos para tarefas anteriores. Trade-offs explícitos foram identificados e documentados, fornecendo diretrizes para configuração em diferentes contextos.
 
 ### Eficiência paramétrica e computacional alcançada
 
-A eficiência paramétrica da proposta é demonstrada através de crescimento moderado de parâmetros (<2% por tarefa com adaptadores LoRA de baixo ranque), comparável ou superior a outras técnicas de adaptação eficiente, mas com melhor proteção contra esquecimento através da integração de múltiplos mecanismos.
+A eficiência paramétrica será avaliada via crescimento moderado de parâmetros (<2% por tarefa com adaptadores LoRA de baixo ranque), e comparada a outras técnicas de adaptação eficiente.
 
-Custos computacionais permanecem viáveis para execução em hardware intermediário, com overhead adicional principalmente devido ao replay gerativo (tipicamente 20-50% de aumento no tempo de treinamento). Otimizações como acúmulo de gradiente e precisão mista permitem manter viabilidade mesmo com essas adições. A latência de inferência permanece comparável a modelos fine-tuned tradicionais quando adaptadores são mesclados no modelo base.
+A viabilidade computacional será reportada considerando overhead de replay gerativo, uso de precisão mista e acúmulo de gradiente. A latência de inferência também será medida para configurações com e sem mesclagem de adaptadores.
 
 ## Contribuições alcançadas
 

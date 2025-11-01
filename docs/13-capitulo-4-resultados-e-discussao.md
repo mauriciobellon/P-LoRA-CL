@@ -4,25 +4,25 @@
 
 ### Desempenho por tarefa ao longo da sequência
 
-Os resultados experimentais demonstram a evolução do desempenho em cada tarefa ao longo da sequência de aprendizado contínuo. A análise revela padrões distintos de comportamento: algumas tarefas mantêm desempenho estável após seu treinamento inicial, enquanto outras experimentam degradação gradual conforme novas tarefas são aprendidas. A arquitetura híbrida proposta mostra capacidade de mitigar significativamente essa degradação quando comparada aos baselines.
+Este capítulo reportará a evolução do desempenho em cada tarefa ao longo da sequência de aprendizado contínuo. A análise incluirá a identificação de padrões distintos de comportamento: tarefas que mantêm desempenho estável após seu treinamento inicial e tarefas que apresentam degradação gradual conforme novas tarefas são aprendidas. A comparação com baselines verificará em que medida a arquitetura híbrida proposta mitiga essa degradação.
 
 Visualizações detalhadas mostram a trajetória de acurácia para cada tarefa após cada etapa de treinamento, permitindo identificar pontos críticos onde o esquecimento é mais pronunciado e onde as defesas integradas são mais efetivas. A comparação entre diferentes configurações da arquitetura (com e sem componentes específicos) revela como cada mecanismo contribui para a preservação do desempenho.
 
 ### Average Accuracy final
 
-A Average Accuracy (ACC) final após treinar toda a sequência de cinco tarefas serve como métrica agregada principal do desempenho geral. Resultados experimentais mostram que a arquitetura híbrida proposta alcança ACC significativamente superior aos baselines de fine-tuning sequencial e LoRA único sequencial, demonstrando efetividade da integração de múltiplos mecanismos de defesa.
+A Average Accuracy (ACC) final após treinar toda a sequência de cinco tarefas serve como métrica agregada principal do desempenho geral (Lopez-Paz & Ranzato, 2017). A análise comparará a ACC da proposta com fine-tuning sequencial e LoRA sequencial, quantificando o efeito líquido da integração de mecanismos de defesa.
 
 Comparação com o upper bound de joint training revela que a proposta alcança uma fração substancial do desempenho máximo teórico, indicando que as defesas contra esquecimento são efetivas mesmo quando aprendendo sequencialmente sem acesso a dados históricos. A análise detalhada mostra como ACC evolui ao longo da sequência, não apenas no ponto final, fornecendo insights sobre a trajetória de aprendizado.
 
 ### Taxa de esquecimento por tarefa
 
-A quantificação da taxa de esquecimento por tarefa revela padrões interessantes sobre quais tarefas são mais vulneráveis ao esquecimento e quais são mais resilientes. Algumas tarefas experimentam esquecimento mínimo mesmo após aprender múltiplas tarefas subsequentes, enquanto outras mostram degradação mais pronunciada.
+A quantificação da taxa de esquecimento por tarefa permitirá identificar quais tarefas são mais vulneráveis e quais são mais resilientes, considerando ordem e similaridade de domínios. Serão reportadas métricas de Forgetting por tarefa, seguindo definições padronizadas (Lopez-Paz & Ranzato, 2017; van de Ven & Tolias, 2019).
 
 A análise sugere que fatores como complexidade da tarefa, similaridade com tarefas subsequentes, e ordem na sequência influenciam significativamente a taxa de esquecimento observada. A arquitetura proposta demonstra capacidade de reduzir consistentemente o esquecimento em relação aos baselines, com reduções médias significativas na taxa de esquecimento por tarefa.
 
 ### Backward Transfer e Forward Transfer
 
-As métricas de transferência (BWT e FWT) fornecem insights sobre como o aprendizado de novas tarefas afeta tarefas anteriores e vice-versa. Backward Transfer negativo indica esquecimento, enquanto valores próximos de zero ou positivos indicam preservação ou até melhoria em tarefas antigas. Forward Transfer positivo indica que conhecimento de tarefas anteriores facilita aprendizado de tarefas futuras.
+As métricas de transferência (BWT e FWT) fornecem insights sobre como o aprendizado de novas tarefas afeta tarefas anteriores e vice-versa (Lopez-Paz & Ranzato, 2017). Backward Transfer negativo indica esquecimento, enquanto valores próximos de zero ou positivos indicam preservação ou até melhoria em tarefas antigas. Forward Transfer positivo indica que conhecimento de tarefas anteriores facilita aprendizado de tarefas futuras.
 
 Resultados experimentais mostram que a arquitetura proposta alcança BWT significativamente melhor (menos negativo) que os baselines, indicando menor esquecimento. Forward Transfer positivo é observado em várias transições entre tarefas, sugerindo que a arquitetura permite aproveitamento efetivo de conhecimento prévio através de conexões laterais e componentes compartilhados protegidos por EWC.
 
@@ -36,7 +36,7 @@ A comparação sistemática com baselines estabelece o valor incremental da arqu
 
 - **Joint training**: Fornece upper bound teórico, mostrando o desempenho máximo possível. A diferença entre joint training e a proposta quantifica o custo de aprender sequencialmente.
 
-A arquitetura proposta alcança desempenho intermediário entre LoRA único e joint training, mas com eficiência paramétrica muito superior ao joint training e custo computacional moderado.
+Espera-se desempenho intermediário entre LoRA sequencial e joint training, com eficiência paramétrica muito superior ao joint training e custo computacional moderado, refletindo o trade-off entre estabilidade e plasticidade.
 
 ## Análise de eficiência
 

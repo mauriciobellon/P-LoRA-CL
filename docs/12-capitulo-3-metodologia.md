@@ -4,25 +4,25 @@
 
 ### Modelo base (BERT-base/DistilBERT) e configuração
 
-A arquitetura proposta utiliza modelos base de porte moderado para garantir viabilidade computacional com recursos limitados. Especificamente, empregamos BERT-base (110M parâmetros) ou DistilBERT (66M parâmetros) como modelos base pré-treinados. Esses modelos oferecem um bom equilíbrio entre capacidade de representação e eficiência computacional, sendo amplamente utilizados em benchmarks de aprendizado contínuo.
+A arquitetura proposta utiliza modelos base de porte moderado para garantir viabilidade computacional com recursos limitados. Especificamente, empregamos BERT-base (110M parâmetros) ou DistilBERT (66M parâmetros) como modelos base pré-treinados (Devlin et al., 2019; Sanh et al., 2019). Esses modelos oferecem um bom equilíbrio entre capacidade de representação e eficiência computacional, sendo amplamente utilizados em benchmarks de aprendizado contínuo.
 
-O modelo base é mantido majoritariamente congelado durante todo o processo de aprendizado contínuo, com apenas componentes específicos sendo parcialmente destravados para aplicação de EWC. A cabeça de classificação padrão (um classificador linear sobre a representação [CLS]) é mantida genérica e pode ser adaptada por tarefa através dos adaptadores LoRA. Esta configuração permite que o modelo compartilhe conhecimento linguístico fundamental enquanto especializa-se para tarefas específicas através de módulos leves.
+O modelo base é mantido majoritariamente congelado durante todo o processo de aprendizado contínuo, com apenas componentes específicos sendo parcialmente destravados para aplicação de EWC. A cabeça de classificação padrão (um classificador linear sobre a representação [CLS]) é mantida genérica e pode ser adaptada por tarefa através dos adaptadores LoRA (Hu et al., 2021). Esta configuração permite que o modelo compartilhe conhecimento linguístico fundamental enquanto especializa-se para tarefas específicas através de módulos leves.
 
 ### Estrutura modular inspirada em PNN
 
-A arquitetura incorpora princípios de modularização progressiva inspirados em PNN, mas de forma parametricamente eficiente. Em vez de adicionar colunas completas de rede para cada tarefa, adicionamos apenas conjuntos de adaptadores LoRA leves. Cada tarefa recebe seu próprio conjunto de adaptadores que são congelados após o treinamento dessa tarefa, criando isolamento estrutural similar ao das PNNs, mas com crescimento paramétrico muito menor.
+A arquitetura incorpora princípios de modularização progressiva inspirados em PNN (Rusu et al., 2016), mas de forma parametricamente eficiente. Em vez de adicionar colunas completas de rede para cada tarefa, adicionamos apenas conjuntos de adaptadores LoRA leves. Cada tarefa recebe seu próprio conjunto de adaptadores que são congelados após o treinamento dessa tarefa, criando isolamento estrutural similar ao das PNNs, mas com crescimento paramétrico muito menor.
 
 A estrutura modular permite que adaptadores de tarefas anteriores sejam mantidos em memória e ativados durante a inferência conforme necessário. Essa abordagem mantém a propriedade de isolamento completa das PNNs (adaptadores anteriores não são atualizados durante treinamento de novas tarefas) enquanto reduz drasticamente o custo de armazenamento e computação.
 
 ### Adaptadores LoRA por tarefa com restrição ortogonal
 
-Para cada nova tarefa T_k, inicializamos um novo conjunto de adaptadores LoRA que será treinado especificamente para essa tarefa. Os adaptadores são injetados nas projeções de atenção (Q, K, V, O) e/ou nas camadas feed-forward do modelo base, dependendo da configuração escolhida. Utilizamos ranks reduzidos (r = 4 a 8) para manter a eficiência paramétrica, resultando em overhead típico de 0,1% a 2% dos parâmetros do modelo base por tarefa.
+Para cada nova tarefa T_k, inicializamos um novo conjunto de adaptadores LoRA que será treinado especificamente para essa tarefa (Hu et al., 2021). Os adaptadores são injetados nas projeções de atenção (Q, K, V, O) e/ou nas camadas feed-forward do modelo base, dependendo da configuração escolhida. Utilizamos ranks reduzidos (r = 4 a 8) para manter a eficiência paramétrica, resultando em overhead típico de 0,1% a 2% dos parâmetros do modelo base por tarefa.
 
-Durante o treinamento dos adaptadores para T_k, impomos restrições ortogonais (O-LoRA) que garantem que os novos adaptadores ocupem subespaços distintos dos adaptadores de tarefas anteriores (T_1, ..., T_{k-1}). Isso é feito através de um termo de regularização na função de perda que penaliza projeções dos novos adaptadores nos subespaços gerados pelos adaptadores anteriores, minimizando interferência entre tarefas.
+Durante o treinamento dos adaptadores para T_k, impomos restrições ortogonais (O-LoRA) que garantem que os novos adaptadores ocupem subespaços distintos dos adaptadores de tarefas anteriores (T_1, ..., T_{k-1}). Isso é feito através de um termo de regularização na função de perda que penaliza projeções dos novos adaptadores nos subespaços gerados pelos adaptadores anteriores, minimizando interferência entre tarefas (inspirado em OWM/OGD; Zeng et al., 2019; Farajtabar et al., 2019).
 
 ### Conexões laterais opcionais para transferência
 
-Para promover transferência positiva entre tarefas, implementamos conexões laterais opcionais inspiradas em PNN. Essas conexões permitem que o módulo atual (adaptadores da tarefa corrente) consuma representações dos módulos anteriores (adaptadores de tarefas passadas) sem atualizá-los. As conexões podem ser implementadas através de concatenação de features, soma ponderada, ou mecanismos de atenção que aprendem a combinar informações de diferentes adaptadores.
+Para promover transferência positiva entre tarefas, implementamos conexões laterais opcionais inspiradas em PNN (Rusu et al., 2016). Essas conexões permitem que o módulo atual (adaptadores da tarefa corrente) consuma representações dos módulos anteriores (adaptadores de tarefas passadas) sem atualizá-los. As conexões podem ser implementadas através de concatenação de features, soma ponderada, ou mecanismos de atenção que aprendem a combinar informações de diferentes adaptadores.
 
 As conexões laterais são configuráveis e podem ser habilitadas ou desabilitadas para análise de ablação, permitindo quantificar seu impacto na transferência forward e no desempenho geral. Quando habilitadas, elas adicionam um pequeno overhead computacional mas podem melhorar significativamente o desempenho inicial em novas tarefas através de aproveitamento de conhecimento prévio.
 
@@ -34,7 +34,7 @@ Após o treinamento em cada tarefa T_i, estimamos a matriz de informação de Fi
 
 ### Integração de replay gerativo parcimonioso
 
-O replay gerativo é implementado de forma parcimoniosa para minimizar custo computacional. Utilizamos um modelo gerador leve (que pode ser o próprio modelo base configurado para geração ou um modelo auxiliar) para produzir exemplos sintéticos das tarefas anteriores. Antes de cada época de treinamento na tarefa atual T_k, geramos um conjunto balanceado de exemplos sintéticos representando as tarefas T_1, ..., T_{k-1}.
+O replay gerativo é implementado de forma parcimoniosa para minimizar custo computacional. Utilizamos um modelo gerador leve (que pode ser o próprio modelo base configurado para geração ou um modelo auxiliar) para produzir exemplos sintéticos das tarefas anteriores, seguindo a linha de Deep Generative Replay (Shin et al., 2017). Antes de cada época de treinamento na tarefa atual T_k, geramos um conjunto balanceado de exemplos sintéticos representando as tarefas T_1, ..., T_{k-1}.
 
 Esses exemplos sintéticos são intercalados com os dados reais da tarefa atual durante o treinamento, compondo tipicamente 10-30% de cada batch. A geração é guiada por prompts estruturados que especificam a tarefa e a classe desejada, e os exemplos gerados são validados automaticamente para garantir qualidade mínima antes de serem incorporados ao treinamento.
 
@@ -42,7 +42,7 @@ Esses exemplos sintéticos são intercalados com os dados reais da tarefa atual 
 
 ### Sequência de tarefas (AG News, Yelp Polarity, Amazon Reviews, DBPedia, Yahoo Answers)
 
-O protocolo experimental utiliza uma sequência de cinco tarefas de classificação amplamente utilizadas em benchmarks de aprendizado contínuo: AG News (classificação de notícias em 4 categorias), Yelp Polarity (análise de sentimento binária em avaliações), Amazon Reviews (análise de sentimento em avaliações de produtos), DBPedia (classificação de entidades em 14 categorias), e Yahoo Answers (classificação de perguntas em 10 categorias).
+O protocolo experimental utiliza uma sequência de cinco tarefas de classificação amplamente utilizadas em benchmarks de aprendizado contínuo: AG News (classificação de notícias em 4 categorias), Yelp Polarity (análise de sentimento binária em avaliações), Amazon Reviews (análise de sentimento em avaliações de produtos), DBPedia (classificação de entidades em 14 categorias), e Yahoo Answers (classificação de perguntas em 10 categorias). Essas coleções são disponibilizadas e amplamente adotadas a partir do repositório de Zhang, Zhao & LeCun (2015), permitindo comparações padronizadas.
 
 A ordem das tarefas foi escolhida para simular mudanças de domínio progressivas — partindo de notícias formais, passando por avaliações de consumidores, até dados enciclopédicos e perguntas de usuários. Essa diversidade de domínios testa a robustez do método a diferentes distribuições textuais e desafia o modelo a manter conhecimento geral enquanto especializa-se para domínios específicos.
 
