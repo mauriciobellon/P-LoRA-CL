@@ -1,43 +1,67 @@
 # Referências bibliográficas
 
-- McCloskey, M., & Cohen, N. J. (1989). Catastrophic interference in connectionist networks: The sequential learning problem. In G. H. Bower (Ed.), Psychology of Learning and Motivation (Vol. 24, pp. 109–165). Academic Press.
+ALJUNDI, R.; BABILONI, F.; ELHOSEINY, M.; ROHRBACH, M.; TUYTELAARS, T. Memory Aware Synapses: Learning what (not) to forget. In: European Conference on Computer Vision – ECCV 2018. Cham: Springer, 2018. p. 144–161. DOI: 10.1007/978-3-030-01219-9_9.
 
-- French, R. M. (1999). Catastrophic forgetting in connectionist networks. Trends in Cognitive Sciences, 3(4), 128–135.
+DE LANGE, M.; ALJUNDI, R.; MASANA, M.; PARISOT, S.; JIA, X.; LEONARDIS, A.; SLABAUGH, G.; TUYTELAARS, T. A continual learning survey: Defying forgetting in classification tasks. IEEE Transactions on Pattern Analysis and Machine Intelligence, v. 44, n. 10, p. 3366–3385, 2022. DOI: 10.1109/TPAMI.2021.3057446.
 
-- Grossberg, S. (1987). Competitive learning: From interactive activation to adaptive resonance. Cognitive Science, 11(1), 23–63.
+DE MASSON D’AUTUME, C.; RUDER, S.; KONG, L.; YOGATAMA, D. Episodic Memory in Lifelong Language Learning. In: Advances in Neural Information Processing Systems (NeurIPS 2019). p. 13122–13131. Disponível em: https://papers.neurips.cc/paper/9471-episodic-memory-in-lifelong-language-learning.pdf
+. Acesso em: 1 nov. 2025.
 
-- Rusu, A. A., Rabinowitz, N. C., Desjardins, G., Soyer, H., Kirkpatrick, J., Kavukcuoglu, K., Pascanu, R., & Hadsell, R. (2016). Progressive Neural Networks. arXiv:1606.04671.
+DETTMERS, T.; PAGNONI, A.; HOLTZMAN, A.; ZETTLEMOYER, L. QLoRA: Efficient Finetuning of Quantized LLMs. In: Advances in Neural Information Processing Systems (NeurIPS 2023). Disponível em: https://arxiv.org/abs/2305.14314
+. Acesso em: 1 nov. 2025.
 
-- Kirkpatrick, J., Pascanu, R., Rabinowitz, N., Veness, J., Desjardins, G., Rusu, A. A., Milan, K., Quan, J., Ramalho, T., Grabska-Barwinska, A., Hassabis, D., Clopath, C., Kumaran, D., & Hadsell, R. (2017). Overcoming catastrophic forgetting in neural networks. PNAS, 114(13), 3521–3526. doi:10.1073/pnas.1611835114. arXiv:1612.00796.
+DEVLIN, J.; CHANG, M.-W.; LEE, K.; TOUTANOVA, K. BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding. In: Proceedings of NAACL-HLT 2019. p. 4171–4186. DOI: 10.18653/v1/N19-1423.
 
-- Huszár, F. (2017). On Quadratic Penalties in Elastic Weight Consolidation. PNAS, 115(11), E2496. arXiv:1712.03847.
+FARAJTABAR, M.; AZIZAN, N.; MOTT, A.; LI, A. Orthogonal Gradient Descent for Continual Learning. arXiv:1910.07104, 2019. Disponível em: https://arxiv.org/abs/1910.07104
+. Acesso em: 1 nov. 2025.
 
-- Schwarz, J., Luketina, J., Czarnecki, W. M., Grabska-Barwinska, A., Teh, Y. W., Pascanu, R., & Hadsell, R. (2018). Progress & Compress: A scalable framework for continual learning. arXiv:1805.06370.
+FRENCH, R. M. Catastrophic forgetting in connectionist networks. Trends in Cognitive Sciences, v. 3, n. 4, p. 128–135, 1999. DOI: 10.1016/S1364-6613(99)01294-2.
 
-- Shin, H., Lee, J. K., Kim, J., & Kim, J. (2017). Continual Learning with Deep Generative Replay. NeurIPS Workshop; arXiv:1705.08690.
+GROSSBERG, S. Competitive learning: From interactive activation to adaptive resonance. Cognitive Science, v. 11, n. 1, p. 23–63, 1987. DOI: 10.1111/j.1551-6708.1987.tb00862.x.
 
-- Lopez-Paz, D., & Ranzato, M. (2017). Gradient Episodic Memory for Continual Learning. NeurIPS 2017. arXiv:1706.08840.
+HOULSBY, N.; GIURGIU, A.; JASTRZEBSKI, S.; MORRONE, B.; DE LAROUSSiLHE, Q.; GESMUNDO, A.; ATTARIYAN, M.; GELLY, S. Parameter-Efficient Transfer Learning for NLP. In: Proceedings of the 36th International Conference on Machine Learning (ICML 2019). PMLR 97, p. 2790–2799. Disponível em: https://proceedings.mlr.press/v97/houlsby19a.html
+. Acesso em: 1 nov. 2025.
 
-- van de Ven, G. M., & Tolias, A. S. (2019). Three scenarios for continual learning. arXiv:1904.07734.
+HU, E. J.; SHEN, Y.; WALLIS, P.; ALLEN-ZHU, Z.; LI, Y.; WANG, S.; WANG, L.; CHEN, W. LoRA: Low-Rank Adaptation of Large Language Models. arXiv:2106.09685, 2021. Disponível em: https://arxiv.org/abs/2106.09685
+. Acesso em: 1 nov. 2025.
 
-- Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., & Chen, W. (2021). LoRA: Low-Rank Adaptation of Large Language Models. arXiv:2106.09685.
+HUSZÁR, F. On Quadratic Penalties in Elastic Weight Consolidation. Proceedings of the National Academy of Sciences (PNAS), v. 115, n. 11, p. E2496–E2497, 2018. DOI: 10.1073/pnas.1717042115.
 
-- Houlsby, N., Giurgiu, A., Jastrzebski, S., Morrone, B., De Laroussilhe, Q., Gesmundo, A., Attariyan, M., & Gelly, S. (2019). Parameter-Efficient Transfer Learning for NLP. arXiv:1902.00751.
+KIRKPATRICK, J.; PASCANU, R.; RABINOWITZ, N.; VENESS, J.; DESJARDINS, G.; RUSU, A.; MILAN, K.; QUAN, J.; RAMALHO, T.; GRABSKA-BARWINSKA, A.; HASSABIS, D.; CLOPATH, C.; KUMARAN, D.; HADSELL, R. Overcoming catastrophic forgetting in neural networks. PNAS, v. 114, n. 13, p. 3521–3526, 2017. DOI: 10.1073/pnas.1611835114.
 
-- Pfeiffer, J., Kamath, A., Rücklé, A., Cho, K., & Gurevych, I. (2021). AdapterFusion: Non-Destructive Task Composition for Transfer Learning. arXiv:2005.00247.
+LESTER, B.; AL-RFOU, R.; CONSTANT, N. The Power of Scale for Parameter-Efficient Prompt Tuning. In: Findings of EMNLP 2021. p. 3045–3059. DOI: 10.18653/v1/2021.findings-emnlp.265.
 
-- Devlin, J., Chang, M.-W., Lee, K., & Toutanova, K. (2019). BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding. NAACL-HLT 2019. arXiv:1810.04805.
+LI, X. L.; LIANG, P. Prefix-Tuning: Optimizing Continuous Prompts for Generation. In: Proceedings of ACL 2021. p. 4582–4597. DOI: 10.18653/v1/2021.acl-long.353.
 
-- Sanh, V., Debut, L., Chaumond, J., & Wolf, T. (2019). DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter. arXiv:1910.01108.
+LI, Z.; HOIEM, D. Learning without Forgetting. In: European Conference on Computer Vision (ECCV 2016). Cham: Springer, 2016. p. 614–629. DOI: 10.1007/978-3-319-46493-0_37.
 
-- Zeng, G., Chen, Y., Cui, B., & Yu, S. (2019). Continual Learning of Context-dependent Processing in Neural Networks (introduz OWM). Nature Machine Intelligence, 1, 364–372. doi:10.1038/s42256-019-0080-x. arXiv:1810.01256.
+LOPEZ-PAZ, D.; RANZATO, M. Gradient Episodic Memory for Continual Learning. In: Advances in Neural Information Processing Systems (NeurIPS 2017). p. 6467–6476.
 
-- Farajtabar, M., Azizan, N., Mott, A., & Li, A. (2019). Orthogonal Gradient Descent for Continual Learning. arXiv:1910.07104.
+McCLOSKEY, M.; COHEN, N. J. Catastrophic interference in connectionist networks: The sequential learning problem. In: BOWER, G. H. (ed.). Psychology of Learning and Motivation, v. 24. San Diego: Academic Press, 1989. p. 109–165. DOI: 10.1016/S0079-7421(08)60137-8.
 
-- Zhang, X., Zhao, J., & LeCun, Y. (2015). Character-level Convolutional Networks for Text Classification. NIPS 2015. arXiv:1509.01626.
+PARISI, G. I.; KEMKER, R.; PART, J. L.; KANAN, C.; WERMTER, S. Continual lifelong learning with neural networks: A review. Neural Networks, v. 113, p. 54–71, 2019. DOI: 10.1016/j.neunet.2019.01.012.
 
-- Dettmers, T., Pagnoni, A., Holtzman, A., & Zettlemoyer, L. (2023). QLoRA: Efficient Finetuning of Quantized LLMs. arXiv:2305.14314.
+PFEIFFER, J.; KAMATH, A.; RÜCKLÉ, A.; CHO, K.; GUREVYCH, I. AdapterFusion: Non-Destructive Task Composition for Transfer Learning. In: Proceedings of the 16th Conference of the European Chapter of the ACL (EACL 2021). p. 312–318. DOI: 10.18653/v1/2021.eacl-main.39.
 
-- De Lange, M., Aljundi, R., Masana, M., Parisot, S., Jia, X., Leonardis, A., Slabaugh, G., & Tuytelaars, T. (2021). A continual learning survey: Defying forgetting in classification tasks. IEEE TPAMI. arXiv:1909.08383. doi:10.1109/TPAMI.2021.3057446.
+RUSU, A. A.; RABINOWITZ, N. C.; DESJARDINS, G.; SOYER, H.; KIRKPATRICK, J.; KAVUKCUOGLU, K.; PASCANU, R.; HADSELL, R. Progressive Neural Networks. arXiv:1606.04671, 2016. Disponível em: https://arxiv.org/abs/1606.04671
+. Acesso em: 1 nov. 2025.
 
-- Parisi, G. I., Kemker, R., Part, J. L., Kanan, C., & Wermter, S. (2019). Continual lifelong learning with neural networks. Neural Networks, 113, 54–71.
+SANH, V.; DEBUT, L.; CHAUMOND, J.; WOLF, T. DistilBERT: A distilled version of BERT – smaller, faster, cheaper and lighter. arXiv:1910.01108, 2019. Disponível em: https://arxiv.org/abs/1910.01108
+. Acesso em: 1 nov. 2025.
+
+SCHWARZ, J.; LUKETINA, J.; CZARNECKI, W. M.; GRABSKA-BARWINSKA, A.; TEH, Y. W.; PASCANU, R.; HADSELL, R. Progress & Compress: A scalable framework for continual learning. In: Proceedings of the 35th International Conference on Machine Learning (ICML 2018). PMLR 80, p. 4528–4537. Disponível em: https://proceedings.mlr.press/v80/schwarz18a.html
+. Acesso em: 1 nov. 2025.
+
+SHIN, H.; LEE, J. K.; KIM, J.; KIM, J. Continual Learning with Deep Generative Replay. In: Advances in Neural Information Processing Systems (NeurIPS 2017). p. 2990–2999.
+
+SUN, F.-K.; HO, C.-H.; LEE, H.-Y. LAMOL: Language Modeling for Lifelong Language Learning. In: International Conference on Learning Representations (ICLR 2020). Disponível em: https://openreview.net/forum?id=Skgxcn4YDS
+. Acesso em: 1 nov. 2025.
+
+VAN DE VEN, G. M.; TOLIAS, A. S. Three scenarios for continual learning. arXiv:1904.07734, 2019. Disponível em: https://arxiv.org/abs/1904.07734
+. Acesso em: 1 nov. 2025.
+
+VASWANI, A.; SHAZEER, N.; PARMAR, N.; USZKOREIT, J.; JONES, L.; GOMEZ, A. N.; KAISER, Ł.; POLOSUKHIN, I. Attention Is All You Need. In: Advances in Neural Information Processing Systems (NeurIPS 2017). p. 5998–6008.
+
+ZENG, G.; CHEN, Y.; CUI, B.; YU, S. Continual Learning of Context-Dependent Processing in Neural Networks (OWM). Nature Machine Intelligence, v. 1, p. 364–372, 2019. DOI: 10.1038/s42256-019-0080-x.
+
+ZHANG, X.; ZHAO, J.; LECUN, Y. Character-Level Convolutional Networks for Text Classification. In: Advances in Neural Information Processing Systems (NeurIPS 2015). p. 649–657.
