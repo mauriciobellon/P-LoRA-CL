@@ -1,0 +1,75 @@
+#!/bin/bash
+
+# Development Environment Activation
+# This script automatically activates the virtual environment when entering the project directory
+# If dependencies are not installed, run the 'install' script first
+
+# =============================================================================
+# AutoEnv Activation
+# =============================================================================
+
+if [ -z "$AUTOENV_CUR_FILE" ]; then
+    AUTOENV_CUR_FILE="$(realpath "${BASH_SOURCE[0]}")"
+    AUTOENV_CUR_DIR="$(dirname "$AUTOENV_CUR_FILE")"
+else
+    AUTOENV_CUR_DIR="$(dirname "$AUTOENV_CUR_FILE")"
+fi
+
+CURRENT_DIR="$(realpath "$(pwd)")"
+ENV_DIR="$(realpath "$(dirname "$AUTOENV_CUR_FILE")")"
+
+# =============================================================================
+# Check if current directory is within the project directory
+# =============================================================================
+
+if [[ "$CURRENT_DIR" == "$ENV_DIR"* ]]; then
+    if [ ! -d "$HOME/.autoenv" ]; then
+        echo "WARNING: autoenv not found. Please run './install' to set up the development environment."
+        return 1
+    fi
+
+    if ! command -v uv >/dev/null 2>&1; then
+        local uv_locations=(
+            "$HOME/.local/bin/uv"
+            "$HOME/.cargo/bin/uv"
+            "/usr/local/bin/uv"
+        )
+        local uv_found=false
+        for location in "${uv_locations[@]}"; do
+            if [ -x "$location" ]; then
+                local bin_dir="$(dirname "$location")"
+                if [[ ":$PATH:" != *":$bin_dir:"* ]]; then
+                    export PATH="$bin_dir:$PATH"
+                fi
+                uv_found=true
+                break
+            fi
+        done
+
+        if [ "$uv_found" = false ]; then
+            echo "WARNING: uv not found. Please run './install' to set up the development environment."
+            return 1
+        fi
+    fi
+
+# =============================================================================
+# Activate the virtual environment
+# =============================================================================
+
+    if [ -f "$ENV_DIR/pyproject.toml" ]; then
+        if [ -d "$ENV_DIR/.venv" ]; then
+            source "$ENV_DIR/.venv/bin/activate"
+        else
+            echo "WARNING: Virtual environment not found. Please run './install' to set up the development environment."
+            return 1
+        fi
+    else
+        echo "ERROR: No pyproject.toml found in project directory ($ENV_DIR)"
+        return 1
+    fi
+else
+    echo "ERROR: Script not being executed within the project directory"
+    echo "       Current directory: $CURRENT_DIR"
+    echo "       Project directory: $ENV_DIR"
+    return 1
+fi
