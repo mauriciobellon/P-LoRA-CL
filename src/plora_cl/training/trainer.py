@@ -262,9 +262,22 @@ class CLTrainer:
         # Restore training state
         self.global_step = checkpoint["global_step"]
         self.current_task_idx = checkpoint["task_idx"]
-        self.start_epoch = checkpoint["epoch"]
-        self.start_batch = checkpoint["batch_idx"] + 1
+        saved_epoch = checkpoint["epoch"]
+        saved_batch = checkpoint["batch_idx"]
         self.trained_tasks = checkpoint["trained_tasks"]
+        
+        # Determine if task is complete by checking the batch number
+        # If we saved at the end of the last epoch, the task is done
+        self.start_batch = saved_batch + 1
+        self.start_epoch = saved_epoch
+        
+        # Check if we finished the last epoch
+        # (saved on last batch of last epoch means move to next task)
+        if saved_epoch == self.epochs - 1:
+            # We're on the last epoch, check if we finished it
+            # batch_idx == len(train_loader) - 1 would mean we finished
+            # But we don't have train_loader here, so we'll check in train_task
+            pass
         
         # Restore base model
         self.base_model.base_model.load_state_dict(checkpoint["base_model_state_dict"])
@@ -386,9 +399,24 @@ class CLTrainer:
         
         # Load checkpoint states if resuming
         if resume_from_checkpoint:
-            optimizer_state, scheduler_state = self.load_checkpoint(str(self.get_latest_checkpoint()))
+            latest_checkpoint = self.get_latest_checkpoint()
+            optimizer_state, scheduler_state = self.load_checkpoint(str(latest_checkpoint))
             optimizer.load_state_dict(optimizer_state)
             scheduler.load_state_dict(scheduler_state)
+            
+            # Check if we need to skip this task entirely (already completed)
+            # If we're on the last epoch and the start batch is at/past the end, task is done
+            if self.start_epoch >= self.epochs - 1 and self.start_batch >= len(train_loader):
+                print(f"Task {task_idx} ({task_name}) already completed, skipping...", flush=True)
+                # Make sure it's in trained_tasks
+                if task_name not in self.trained_tasks:
+                    self.trained_tasks.append(task_name)
+                return
+            elif self.start_epoch >= self.epochs:
+                print(f"Task {task_idx} ({task_name}) already completed (epochs), skipping...", flush=True)
+                if task_name not in self.trained_tasks:
+                    self.trained_tasks.append(task_name)
+                return
 
         # Initialize loss function
         loss_fn = CompositeLoss(
@@ -415,6 +443,11 @@ class CLTrainer:
             
             # Determine starting batch
             start_batch = self.start_batch if (resume_from_checkpoint and epoch == start_epoch) else 0
+            
+            # If starting batch is at or beyond the end of the dataloader, skip this epoch
+            if start_batch >= len(train_loader):
+                print(f"  Epoch {epoch + 1} already completed, skipping...", flush=True)
+                continue
 
             for batch_idx, batch in enumerate(train_loader):
                 # Skip batches if resuming from checkpoint
@@ -501,27 +534,29 @@ class CLTrainer:
                 epoch_loss += loss_dict["total_loss"].item()
                 num_batches += 1
 
-            avg_loss = epoch_loss / num_batches
-            print(f"\n  Epoch {epoch + 1}/{self.epochs} completed! Avg Loss: {avg_loss:.4f}", flush=True)
+            # Only log and save if we actually processed batches
+            if num_batches > 0:
+                avg_loss = epoch_loss / num_batches
+                print(f"\n  Epoch {epoch + 1}/{self.epochs} completed! Avg Loss: {avg_loss:.4f}", flush=True)
 
-            # Log metrics
-            self.tracker.log_metrics(
-                step=epoch,
-                task_idx=task_idx,
-                task_name=task_name,
-                metrics={"loss": avg_loss},
-            )
-            
-            # Save checkpoint at end of epoch
-            if self.checkpoint_every > 0:
-                self.save_checkpoint(
+                # Log metrics
+                self.tracker.log_metrics(
+                    step=epoch,
                     task_idx=task_idx,
-                    epoch=epoch,
-                    batch_idx=len(train_loader) - 1,
-                    optimizer=optimizer,
-                    scheduler=scheduler,
-                    loss=avg_loss,
+                    task_name=task_name,
+                    metrics={"loss": avg_loss},
                 )
+                
+                # Save checkpoint at end of epoch
+                if self.checkpoint_every > 0:
+                    self.save_checkpoint(
+                        task_idx=task_idx,
+                        epoch=epoch,
+                        batch_idx=len(train_loader) - 1,
+                        optimizer=optimizer,
+                        scheduler=scheduler,
+                        loss=avg_loss,
+                    )
 
         training_time = time.time() - start_time
         
