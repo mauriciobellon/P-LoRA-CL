@@ -1,0 +1,31 @@
+# Example experiment configuration
+
+model_name: "distilbert-base-uncased"
+device: "auto"
+experiment_dir: "experiments"
+experiment_name: "baseline"
+seed: 42
+
+# Training config
+batch_size: 32
+learning_rate: 1e-4
+epochs: 3
+
+# LoRA config
+lora_r: 8
+lora_alpha: 16
+
+# Regularization
+lambda_ortho: 0.1
+lambda_ewc: 100.0
+
+# Replay
+replay_ratio: 0.2
+
+# Components
+use_ewc: true
+use_orthogonal: true
+use_replay: true
+use_lateral: false
+
+

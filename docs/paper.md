@@ -160,11 +160,25 @@ O principal desafio é o esquecimento catastrófico — a tendência de redes ne
 
 Métricas clássicas para quantificar retenção e transferência incluem Acurácia Média (ACC), Backward Transfer (BWT), Forward Transfer (FWT) e Forgetting, popularizadas por Lopez-Paz & Ranzato (2017) e sistematizadas por van de Ven & Tolias (2019).
 
+Além da definição geral, é útil distinguir cenários e protocolos: (i) task-incremental (as fronteiras entre tarefas são conhecidas e disponíveis na inferência), (ii) class-incremental (as classes acumulam ao longo do tempo e a inferência é task-agnostic) e (iii) domain-incremental (a tarefa permanece a mesma, mas a distribuição muda) (van de Ven & Tolias, 2019). Esses cenários impõem graus distintos de dificuldade e influenciam quais mecanismos (arquiteturais, de regularização ou de replay) tendem a funcionar melhor.
+
+Em PLN, o aprendizado contínuo frequentemente ocorre sob concept drift e domain shift (novos tópicos, estilos, gírias, ou mudanças no registro linguístico), o que exige que o modelo incorpore novas regularidades sem perder competências linguísticas e pragmáticas adquiridas. Restrições práticas — privacidade, compliance regulatório, e limites de armazenamento — também afetam a escolha entre métodos que dependem de buffers de dados (rehearsal) versus alternativas gerativas ou puramente paramétricas (EWC/MAS/SI). Para comparações justas, recomenda-se explicitar cenários, conhecimento de tarefa na inferência (task-aware vs task-agnostic), orçamento de memória e custos computacionais, evitando conclusões enviesadas por protocolos (De Lange et al., 2021).
+
+Por fim, diferentes famílias de soluções endereçam o problema por ângulos complementares: (a) isolamento estrutural (PNN), (b) proteção de parâmetros importantes via regularização (EWC, MAS, SI), (c) reforço de dados por rehearsal real ou gerativo (GEM/A-GEM; LAMOL), e (d) controle de interferência por otimização/projeção (OGD/OWM) e por alocação de subespaços ortogonais em adaptações de baixo ranque (LoRA com alocação ortogonal). O presente trabalho investiga sinergias entre essas frentes no contexto de PLN.
+
 #### 2.1.2. Dilema estabilidade-plasticidade
 
 O dilema estabilidade-plasticidade, formalizado por Grossberg (1987), é fundamental para entender os desafios do aprendizado contínuo. Plasticidade refere-se à capacidade do sistema de modificar seus parâmetros para incorporar novos conhecimentos, enquanto estabilidade refere-se à capacidade de preservar conhecimentos previamente adquiridos. Em redes neurais tradicionais, essas capacidades estão em conflito: aumentar a plasticidade facilita o aprendizado de novas tarefas mas aumenta a vulnerabilidade ao esquecimento, enquanto aumentar a estabilidade protege contra esquecimento mas pode impedir adaptação efetiva a novas distribuições.
 
 O equilíbrio ótimo depende de múltiplos fatores, incluindo a similaridade entre tarefas, a capacidade do modelo, e o regime de treinamento. Em PLN, onde tarefas podem variar desde classificação de sentimento até tradução ou sumarização, encontrar esse equilíbrio é particularmente desafiador devido à diversidade de objetivos e distribuições.
+
+Na prática, estratégias distintas caminham ao longo desse trade-off:
+- Isolamento estrutural (PNN): maximiza estabilidade ao congelar colunas passadas, sacrificando eficiência paramétrica;
+- Regularização baseada em importância (EWC/MAS/SI): ancora pesos críticos com penalidades quadráticas (Huszár, 2018 discute limitações), preservando estabilidade moderada e com pouco overhead; 
+- Replay (real ou gerativo): restaura gradientes úteis do passado para manter trajetórias de solução em regiões compatíveis com tarefas anteriores; 
+- Projeções/ortogonalidade: força atualizações a evitarem subespaços usados (OGD, OWM) ou aloca subespaços LoRA quase-ortogonais para tarefas sucessivas, mitigando interferência direta.
+
+Matematicamente, a interferência entre tarefas pode ser aproximada via similaridade de gradientes (e.g., cosseno entre ∇_θ L_i e ∇_θ L_j). Cossenos negativos indicam conflitos (update em T_k degrada T_j), enquanto positivos sugerem transferência. Técnicas de estabilidade-plasticidade eficazes buscam aumentar a probabilidade de cossenos não-negativos ao longo da sequência, seja pela proteção de parâmetros importantes (EWC), pelo reuso controlado de representações (PNN, conexões laterais), pelo reforço de dados (replay), ou pela redução explícita da sobreposição entre subespaços de atualização (ortogonalidade).
 
 #### 2.1.3. Esquecimento catastrófico em redes neurais
 
@@ -174,11 +188,19 @@ A natureza do esquecimento catastrófico em Transformers é particularmente comp
 
 Entre os mecanismos de mitigação, destacam-se: (i) isolamento estrutural via PNNs (Rusu et al., 2016); (ii) regularização baseada em informação via EWC (Kirkpatrick et al., 2017; Schwarz et al., 2018); (iii) replay (Shin et al., 2017), inclusive sem dados brutos; e (iv) restrições ortogonais sobre atualizações/espelhos de parâmetros (Zeng et al., 2019; Farajtabar et al., 2019).
 
+Uma forma operacional de diagnosticar esquecimento é acompanhar a curva R_{i,j}: o desempenho em j após treinar i tarefas (Lopez-Paz & Ranzato, 2017). Quedas consistentes de R_{i,j} quando i aumenta são indicativas de interferência destrutiva. Adicionalmente, inspeções de similaridade de gradientes entre tarefas e de normas de atualização por camada fornecem evidências de onde e como a degradação ocorre. Em Transformers, esquecimentos podem concentrar-se em projeções de atenção (Q/K/V/O) ou em projeções internas do MLP, a depender do tipo de tarefa e do padrão de reutilização de representações.
+
+Em modelos de linguagem generativos, há o risco adicional de “ciclo catastrófico”: ao começar a esquecer uma tarefa anterior, o próprio gerador degrada a qualidade das amostras dessa tarefa em métodos de replay gerativo, o que retroalimenta o esquecimento. Técnicas como regularização leve nas camadas base (EWC/MAS/SI), buffers curados (GEM/A-GEM) ou alocação de subespaços de adaptação com baixa sobreposição (p. ex., LoRA com ortogonalidade) atenuam esse ciclo, mantendo sinais de gradiente úteis para tarefas pretéritas.
+
 #### 2.1.4. Contexto específico do PLN
 
 Em PLN, o aprendizado contínuo apresenta desafios adicionais e motivação especial. Enquanto em visão computacional ou robótica as tarefas podem ser bem delimitadas (por exemplo, diferentes conjuntos de classes de imagens), em PLN há grande diversidade de tarefas: classificação de intenção, análise de sentimento, perguntas e respostas, tradução, sumarização, entre outras. Essas tarefas frequentemente envolvem dados textuais de domínios distintos e objetivos variáveis.
 
 A linguagem natural é inerentemente ambígua e dependente do contexto, com vocabulário em constante evolução. Essa natureza dinâmica reforça a motivação para sistemas de PLN que aprendam continuamente: aplicações reais frequentemente precisam incorporar novas gírias, tópicos emergentes, mudanças de estilo ou domínio linguístico sem perder a habilidade em tarefas anteriores. Um assistente virtual pode precisar aprender progressivamente novos tipos de consultas dos usuários ao longo do tempo, sem esquecer como responder às solicitações antigas.
+
+Além da diversidade de objetivos, o ecossistema de PLN traz particularidades: (i) tarefas podem ser multi-rótulo, multi-turno e sensíveis a contexto, exigindo memória de longo prazo; (ii) mudanças de domínio podem alterar distribuições lexicais e pragmáticas, exigindo adaptação rápida sem “descalibrar” competências gerais; (iii) restrições de privacidade e confidencialidade dificultam rehearsal com dados brutos, motivando replay gerativo (Sun et al., 2020) ou métodos puramente paramétricos.
+
+Outro ponto é a diferença entre regimes multi-tarefa e contínuo. Em multi-tarefa, o otimizador vê exemplos de todas as tarefas simultaneamente, o que facilita chegar a regiões de solução compatíveis. Em contínuo, o fluxo é sequencial, e o caminho de otimização importa: trajetórias podem atravessar “gargalos” em que atualizações para a tarefa atual movem o modelo para fora da região de bom desempenho para tarefas antigas. Por isso, estratégias de proteção (EWC/MAS/SI), isolamento (PNN, subespaços LoRA por tarefa) e reforço (replay real/gerativo) são centrais no contexto de PLN.
 
 ### 2.2. Redes Neurais Progressivas
 
@@ -188,11 +210,15 @@ As Redes Neurais Progressivas (Progressive Neural Networks - PNN), proposta por 
 
 Quando a tarefa T_k é iniciada, cria-se uma nova coluna de parâmetros inicializada (geralmente a partir de uma versão pré-treinada) para aprender T_k. As colunas das tarefas anteriores são congeladas — seus pesos não são alterados durante o treinamento de T_k — e são estabelecidas conexões laterais da saída (ou camadas intermediárias) de cada coluna anterior para a nova coluna. Essas conexões laterais permitem que a nova coluna reutilize e transfira conhecimento das características previamente aprendidas nas tarefas anteriores, promovendo transferência de aprendizado para frente.
 
+Na prática, PNNs particionam o problema de estabilidade-plasticidade pela construção: estabilidade é garantida pois as colunas antigas não sofrem atualização; plasticidade é alocada à coluna nova. As conexões laterais (skip/concat/atenção) fornecem um caminho explícito para transferência positiva sem risco de degradar colunas antigas. O custo é paramétrico: cada tarefa adiciona aproximadamente 100% dos parâmetros da arquitetura de base, além do custo das conexões laterais, o que inviabiliza PNNs puras em modelos de grande porte sem medidas complementares de compressão.
+
 #### 2.2.2. Isolamento de parâmetros por tarefa
 
 A característica fundamental das PNNs é o isolamento completo entre tarefas em termos de parâmetros. Cada coluna atende a uma tarefa específica, garantindo que uma tarefa nova não degrade o desempenho das anteriores através de interferência destrutiva direta. Como os parâmetros das colunas antigas não são modificados, a PNN elimina o esquecimento catastrófico por construção — o aprendizado de T_k não interfere diretamente nos pesos que foram sintonizados para tarefas anteriores.
 
 Esse isolamento é conceitualmente simples e teoricamente garantido, mas vem ao custo de crescimento linear do número de parâmetros em função do número de tarefas. Para cada nova tarefa adiciona-se uma coluna completa de rede, o que pode se tornar impraticável quando as tarefas são numerosas ou quando a arquitetura base é muito grande.
+
+Na inferência, PNNs típicas assumem conhecimento do ID da tarefa para rotear entradas para a coluna apropriada (task-aware). Em cenários task-agnostic, estratégias de roteamento ou detecção (por exemplo, um seletor leve treinado sobre representações compartilhadas) tornam-se necessárias. Alternativas como Progress & Compress (Schwarz et al., 2018) tentam reduzir o custo ao distilar/compactar conhecimento de colunas antigas em uma base compartilhada, mantendo um buffer (ou regularização) que previne regressão em tarefas passadas.
 
 #### 2.2.3. Conexões laterais e transferência de conhecimento
 
@@ -200,11 +226,15 @@ As conexões laterais são um mecanismo explícito de transferência que permite
 
 O benefício das conexões laterais é duplo: primeiro, permitem que a nova tarefa se beneficie de conhecimento prévio aprendido, potencialmente acelerando o treinamento e melhorando o desempenho inicial. Segundo, fornecem um mecanismo de forward transfer, onde conhecimento de tarefas anteriores facilita o aprendizado de tarefas futuras. Em termos práticos, isso significa que uma nova tarefa pode partir de representações já úteis, em vez de aprender tudo do zero.
 
+Na implementação, uma preocupação é evitar transferência negativa: conexões laterais mal calibradas podem introduzir vieses indesejados quando a similaridade entre tarefas é baixa. Mecanismos de atenção/aprendizado de pesos por camada, normalização adequada e congelamento seletivo de caminhos ajudam a mitigar esse risco. Em Transformers, lateral connections podem atuar nas projeções intermediárias (outputs de blocos) ou na forma de adapters adicionais que agregam informações de colunas anteriores de modo controlado, mantendo a base estável.
+
 #### 2.2.4. Vantagens e limitações
 
 As principais vantagens das PNNs são o isolamento completo entre tarefas (garantindo imunidade ao esquecimento), a simplicidade conceitual, e a capacidade de transferência positiva através de conexões laterais. A abordagem reflete, em certo grau, a modularidade do aprendizado biológico, onde novos conhecimentos podem recrutar novas estruturas sem apagar as antigas.
 
 A principal limitação é o crescimento linear pesado de parâmetros: aplicar PNN ingênua a 10 tarefas com um modelo do porte do BERT significaria ter 10 modelos BERT em memória ao final. Além disso, PNNs normalmente assumem que os limites entre tarefas são conhecidos e bem definidos durante o treinamento, e geralmente requerem conhecimento da tarefa na inferência para rotear exemplos à coluna apropriada. Essas limitações motivam alternativas que capturam os benefícios das PNNs (isolamento e transferência) de forma mais parametricamente eficiente.
+
+Variações modernas combinam PNN com compressão/regularização (Schwarz et al., 2018) ou com adapters parametricamente leves, reduzindo a duplicação integral de colunas. Outras linhas exploram subespaços ortogonais de atualização (em vez de novas colunas completas), buscando um meio-termo entre imunidade a interferência e crescimento de memória — ideia que dialoga com LoRA e suas extensões no contexto de PLN.
 
 ### 2.3. Adaptações de Baixo Ranque com Restrições Ortogonais
 
@@ -214,11 +244,15 @@ O LoRA (Low-Rank Adaptation), proposto por Hu et al. (2021), oferece uma forma d
 
 Para cada matriz de pesos W em camadas selecionadas (por exemplo, nas projeções de atenção ou na rede feed-forward), LoRA introduz duas matrizes menores A e B de dimensões de posto r (tipicamente r bem menor que o tamanho original da camada) de forma que a atualização da camada seja W + ΔW, onde ΔW = AB representa um ajuste de baixo ranque aprendido para a nova tarefa. Em vez de ajustar todos os pesos do modelo, apenas os parâmetros nesses pequenos módulos são aprendidos.
 
+Na prática, LoRA é frequentemente aplicado às projeções de atenção (Q, K, V e/ou O) e, em alguns casos, às projeções internas do MLP. Hiperparâmetros usuais incluem o ranque r e um fator de escalonamento α (às vezes implementado via “lora_alpha”), além de dropout nos caminhos LoRA. Durante a inferência, os deltas podem ser mesclados em W (merge) sem aumentar a latência, ou aplicados como caminho paralelo (dependendo da implementação). Essa modularidade viabiliza manter um conjunto de adapters por tarefa e ativá-los sob demanda, o que é atraente para cenários de aprendizado contínuo com orçamento de memória restrito.
+
 #### 2.3.2. Decomposição de baixo ranque
 
 A decomposição de baixo ranque explora a hipótese de que as atualizações de pesos necessárias para uma nova tarefa podem ser representadas eficientemente em um subespaço de dimensão muito menor que o espaço original de parâmetros. Se W tem dimensões d×d, LoRA introduz duas matrizes A (d×r) e B (r×d), onde r << d. O produto AB resulta em uma matriz de atualização de posto no máximo r, permitindo representar mudanças complexas com muito menos parâmetros.
 
 A inicialização das matrizes A e B é importante: tipicamente A é inicializada aleatoriamente e B é inicializada com zeros, garantindo que ΔW = 0 inicialmente e o modelo começa com o comportamento do modelo base. Durante o treinamento, apenas A e B são atualizados, mantendo W congelado.
+
+Do ponto de vista geométrico, aprender A e B é equivalente a escolher uma base de r direções no espaço de parâmetros e aprender combinações lineares ao longo dessas direções. Extensões investigam alocação adaptativa de ranque por camada e por tarefa (ajustando r dinamicamente conforme a sensibilidade de cada módulo), bem como decomposições que operam no espaço de valores singulares (p. ex., parametrizando ΔW via SVD e realizando pruning dos singulares menos relevantes). Essas variações mantêm a filosofia central de expressividade controlada com eficiência paramétrica.
 
 #### 2.3.3. Eficiência paramétrica e computacional
 
@@ -226,11 +260,13 @@ Uma vantagem crucial do LoRA é a redução dramática de parâmetros ajustávei
 
 Além da eficiência paramétrica, o LoRA mantém eficiência computacional: como o modelo base permanece congelado e compartilhado entre todas tarefas, não há aumento de latência na inferência quando os deltas são mesclados de volta nos pesos originais. Isso torna viável carregar múltiplos adapters LoRA — um por tarefa — em memória sem explodir o uso de recursos.
 
+Quando combinado com quantização (por exemplo, QLoRA; Dettmers et al., 2023), é possível reduzir substancialmente o custo de memória do modelo base sem sacrificar a capacidade de adaptação: o backbone quantizado permanece congelado e apenas os adapters de baixo ranque (em precisão maior) são aprendidos. Essa combinação é particularmente atraente em cenários de aprendizado contínuo, pois permite manter diversos adapters por tarefa com custo marginal, viabilizando catálogos de competências que podem ser ativadas seletivamente.
+
 #### 2.3.4. O-LoRA: imposição de ortogonalidade entre adaptadores
 
-O LoRA puro não resolve por si só o esquecimento catastrófico quando usado sequencialmente. Se o mesmo conjunto de adaptadores for reutilizado para múltiplas tarefas em sequência, a tarefa nova pode sobrescrever as representações adquiridas pelos adaptadores na tarefa anterior. Para enfrentar essa limitação, o O-LoRA (Orthogonal LoRA), proposto por Wang et al. (2023), impõe restrições ortogonais entre os subespaços de adaptação de cada tarefa.
+O LoRA puro não resolve por si só o esquecimento catastrófico quando usado sequencialmente. Se o mesmo conjunto de adaptadores for reutilizado para múltiplas tarefas em sequência, a tarefa nova pode sobrescrever as representações adquiridas pelos adaptadores na tarefa anterior. Para enfrentar essa limitação, métodos baseados em ortogonalidade impõem restrições entre os subespaços de adaptação de cada tarefa, reduzindo a sobreposição entre direções de atualização.
 
-Ao treinar os adaptadores de uma nova tarefa, adiciona-se um termo de regularização (ou projeta-se explicitamente) para que os novos deltas de baixo ranque fiquem ortogonais aos espaços gerados pelos deltas das tarefas anteriores. Assim, cada tarefa T_i aprende sua atualização ΔW_i = A_i B_i em um subespaço linear distinto, minimizando projeções em direções usadas por ΔW_j de tarefas j < i.
+Ao treinar os adaptadores de uma nova tarefa, pode-se adicionar um termo de regularização (ou realizar projeções explícitas) para que os novos deltas de baixo ranque fiquem aproximadamente ortogonais aos espaços gerados pelos deltas das tarefas anteriores. Assim, cada tarefa T_i aprende sua atualização ΔW_i = A_i B_i em um subespaço linear distinto, minimizando projeções em direções usadas por ΔW_j de tarefas j < i. Essa ideia dialoga com técnicas de projeção ortogonal no espaço de gradientes/pesos (OGD, OWM) e com alocação proativa de bases ortogonais em subespaços LoRA para aprendizado contínuo, como em PLAN (Wang, Zhuang & Zhang, 2025).
 
 #### 2.3.5. Isolamento em subespaços distintos
 
@@ -238,11 +274,15 @@ O isolamento em subespaços ortogonais atua como um análogo leve de uma PNN: em
 
 O custo adicional do O-LoRA é marginal: os adaptadores ortogonais têm o mesmo número de parâmetros do LoRA convencional (apenas o procedimento de treinamento muda), mantendo a eficiência. No entanto, garantir ortogonalidade perfeita entre subespaços de diversas tarefas pode se tornar difícil conforme o número de tarefas cresce, especialmente se o ranque r for limitado.
 
+Na prática, a ortogonalização pode ser implementada por (i) penalizações de correlação/cosseno entre colunas de A_i e bases prévias, (ii) projeções tipo Gram–Schmidt sobre bases acumuladas, ou (iii) seleção proativa de vetores-base com baixa sensibilidade à interferência (como proposto por PLAN). À medida que o número de tarefas cresce, pode ser necessário reciclar/compactar subespaços para manter a eficiência, por exemplo, reestimando bases partilhadas entre tarefas similares e reservando direções exclusivas para tarefas com maior conflito.
+
 #### 2.3.6. Vantagens e limitações
 
 LoRA e suas variantes ortogonais oferecem um compromisso atraente entre isolamento de tarefas e eficiência. Cada tarefa é especializada por meio de um conjunto pequeno de parâmetros adicionais, resultando em crescimento linear modesto de memória com o número de tarefas (ordens de grandeza menor que adicionar colunas completas como na PNN). Com O-LoRA, obtém-se também isolamento efetivo entre tarefas, aproximando-se do ideal de "uma coluna por tarefa", porém de forma muito mais leve.
 
 As limitações incluem o crescimento linear ainda presente (embora baixo), a necessidade de conhecimento da tarefa na inferência para ativar o conjunto correto de adaptadores, e possíveis dificuldades em manter ortogonalidade perfeita em sequências muito longas. Ainda assim, LoRA e O-LoRA representam avanços importantes para viabilizar aprendizado contínuo em modelos de PLN grandes, fornecendo eficiência paramétrica com isolamento suficiente para mitigar grande parte do esquecimento.
+
+Do ponto de vista de implantação, surge o problema de roteamento de adapters: em cenários task-agnostic, um detector/roteador leve (por semelhança de embeddings, metadados ou cabeçotes dedicados) pode selecionar o adapter mais apropriado; alternativas incluem composição/fusão de adapters (AdapterFusion; Pfeiffer et al., 2021) para lidar com exemplos que acionam múltiplas competências. Em treinamento, LoRA ortogonal pode ser combinado com replay (real/gerativo) e regularizações leves (EWC/MAS/SI) para reforçar ainda mais a estabilidade, explorando sinergias entre mecanismos complementares.
 
 ### 2.4. Elastic Weight Consolidation
 
@@ -252,11 +292,15 @@ Elastic Weight Consolidation (EWC), proposto por Kirkpatrick et al. (2017), é u
 
 Antes de aprender a tarefa T_k, o algoritmo EWC calcula, para cada peso θ_j do modelo, um valor de importância que quantifica o quanto θ_j contribuiu para o desempenho nas tarefas anteriores. Essa importância é tipicamente estimada através da matriz de informação de Fisher, avaliada nos dados das tarefas passadas. Intuitivamente, se um peso influenciava fortemente as predições corretas nas tarefas antigas, o EWC irá puni-lo caso ele se desvie muito do seu valor original enquanto aprende a nova tarefa.
 
+Métodos afins incluem MAS (Memory Aware Synapses; Aljundi et al., 2018) e SI (Synaptic Intelligence; Zenke et al., 2017), que estimam importâncias por sensibilidade das saídas ou trajetórias de otimização. Essas variantes diferem no procedimento de estimação e podem ser mais robustas quando dados passados não estão disponíveis integralmente. Em PLN, aplicar regularização leve nas camadas compartilhadas (embeddings e blocos inferiores) preserva competências gerais, enquanto camadas superiores e adapters (e.g., LoRA) mantêm plasticidade para especialização.
+
 #### 2.4.2. Matriz de informação de Fisher
 
 A matriz de informação de Fisher F fornece uma medida da importância de cada parâmetro para o desempenho do modelo. Os elementos diagonais F_j da matriz representam a curvatura da função de perda em relação ao parâmetro θ_j: valores altos indicam que pequenas mudanças em θ_j têm grande impacto no desempenho, enquanto valores baixos indicam que o parâmetro é menos crítico.
 
 A estimativa da matriz de Fisher requer avaliar o gradiente da função de perda em relação aos parâmetros sobre os dados da tarefa anterior. Em implementações práticas, apenas os elementos diagonais são computados (aproximação diagonal), reduzindo significativamente o custo computacional. A matriz de Fisher é estimada após o treinamento em cada tarefa e armazenada para uso nas tarefas subsequentes.
+
+A aproximação diagonal ignora correlações entre parâmetros, o que pode levar a excesso de rigidez ou proteção insuficiente, dependendo do regime (Huszár, 2018). Mesmo assim, a diagonal é a escolha dominante por eficiência. Extensões online acumulam F de forma amortizada ao longo das tarefas (Online EWC; Schwarz et al., 2018), evitando armazenar estatísticas separadas por tarefa e reduzindo memória adicional.
 
 #### 2.4.3. Termo de penalização na função de perda
 
@@ -266,17 +310,23 @@ L(θ) = L_novo(θ) + λ Σ_j (1/2) F_j (θ_j - θ_j*)^2
 
 onde L_novo é a perda normal nos dados da nova tarefa, θ_j* é o valor do peso j após treinamento na tarefa anterior (mantido como referência), F_j é o elemento diagonal da matriz de Fisher, e λ é um hiperparâmetro que controla a força da penalização. Esse termo adicional atua como uma "mola" ancorando cada peso em torno do valor antigo com rigidez proporcional à importância F_j.
 
+Em Online EWC, a referência θ* e a importância acumulada são atualizadas com fator de decaimento, prevenindo que o histórico remoto domine o comportamento do modelo e preservando plasticidade para tarefas recentes. Em arquiteturas com adapters, é comum aplicar EWC apenas ao backbone (congelado ou parcialmente ajustado) e deixar os adapters livres, obtendo proteção do conhecimento geral e especialização barata por tarefa.
+
 #### 2.4.4. Consolidação de conhecimento crítico
 
 Pesos críticos ficam quase "congelados" (alta penalização se mudarem), enquanto pesos pouco relevantes podem se ajustar livremente à nova tarefa. Dessa forma, o EWC tenta obter um compromisso ótimo entre não esquecer o passado e ainda aprender o novo, encontrando uma região no espaço de parâmetros que minimize a perda da tarefa atual sem sair da região de bom desempenho das tarefas antigas.
 
 A consolidação é particularmente efetiva quando aplicada a componentes compartilhados que mantêm conhecimento linguístico fundamental, como embeddings ou camadas iniciais do modelo. Essas camadas frequentemente codificam conhecimento geral que beneficia múltiplas tarefas, tornando-as candidatas ideais para proteção via EWC.
 
+No contexto de PLN com grandes modelos, a combinação de EWC com adaptações leves (LoRA) fornece um caminho prático: congelar o backbone (ou permitir atualizações mínimas, protegidas por EWC) e concentrar plasticidade nos adapters. Essa estratégia reduz o risco de interferência destrutiva nas representações de base, enquanto permite especialização rápida por tarefa com baixo custo paramétrico.
+
 #### 2.4.5. Vantagens e limitações
 
 O EWC se destaca por sua simplicidade e generalidade: não requer modificar a arquitetura da rede nem adicionar parâmetros extras, apenas a função de custo muda. Não há crescimento de memória conforme novas tarefas são aprendidas (diferente de PNN/LoRA) e não é necessário armazenar dados antigos (diferente de métodos de replay). Em implementações offline, basta armazenar as estimativas de F_j e os valores antigos θ_j após cada tarefa.
 
 Apesar de mitigar o esquecimento, o EWC raramente o elimina por completo. Em cenários de longas sequências de tarefas, as restrições impostas podem se acumular a ponto de prejudicar a plasticidade do modelo para novas tarefas. O efeito depende criticamente do hiperparâmetro λ: se muito alto, o modelo praticamente não aprende a nova tarefa; se muito baixo, o modelo esquece facilmente as antigas. Encontrar um equilíbrio pode exigir validação cuidadosa para cada situação.
+
+Limitações práticas incluem: (i) aproximações diagonais da Fisher que desconsideram correlações entre pesos; (ii) sensibilidade à escala da perda (Huszár, 2018); e (iii) necessidade de estimar importâncias com amostras representativas. Na prática, EWC funciona melhor como componente de um arranjo híbrido (p. ex., com LoRA e replay), em que fornece “freios leves” no backbone enquanto adapters e/ou dados sintéticos garantem plasticidade suficiente para a tarefa corrente.
 
 ### 2.5. Replay Gerativo
 
@@ -286,11 +336,15 @@ O replay gerativo é uma estratégia inspirada no conceito de rehearsal em psico
 
 A solução oferecida pelo replay gerativo é substituir os dados reais por dados sintéticos gerados por um modelo. Em vez de guardar exemplos de tarefas passadas, treina-se (ou utiliza-se) um modelo gerador que produz pseudo-exemplos das tarefas anteriores para serem intercalados no treinamento corrente. Essa abordagem é frequentemente chamada de pseudo-rehearsal ou deep generative replay.
 
+Comparativamente, métodos com buffer real (e.g., GEM/A-GEM; Lopez-Paz & Ranzato, 2017; Chaudhry et al., 2019) garantem amostras fiéis mas esbarram em políticas de retenção e orçamento de memória. O replay gerativo contorna restrições de armazenamento e privacidade ao custo de depender da qualidade do gerador. Em PLN, o próprio LM pode atuar como gerador de exemplos condicionados por rótulos/tarefas, viabilizando revisão contínua sem armazenar dados brutos.
+
 #### 2.5.2. LAMOL: Language Modeling for Lifelong Learning
 
 Em PLN, o LAMOL (Language Modeling for Lifelong Learning), proposto por Sun et al. (2020), exemplifica bem o replay gerativo. Nele, um único modelo de linguagem é treinado para duas funções simultâneas: (i) resolver a tarefa atual e (ii) gerar dados de tarefas anteriores sob forma de texto. O processo funciona assim: antes (ou durante) de treinar na tarefa T_k, o modelo gera um conjunto de exemplos fictícios das tarefas T_1, ..., T_{k-1} que já aprendeu.
 
 Esses exemplos gerados — às vezes chamados de exemplos "nostálgicos" — são então misturados com os dados reais da nova tarefa durante o treino de T_k. O gradiente que atualiza o modelo é influenciado não só pela nova tarefa, mas também por recriações das antigas, reforçando as conexões relevantes para o desempenho passado.
+
+Um aspecto prático do LAMOL é o uso de tokens especiais para condicionar a geração por tarefa/objetivo, permitindo ao mesmo LM atuar tanto como solucionador quanto como gerador condicionado. O treino envolve uma mistura controlada de perdas (resolução vs. LM gerativo), e a proporção de exemplos gerados por tarefa influencia a estabilidade: proporções maiores reforçam a memória, mas aumentam o custo e podem enviesar o treino atual. Seleção/curadoria dos prompts de geração é igualmente importante para evitar deriva de distribuição nas amostras sintéticas.
 
 #### 2.5.3. Geração de exemplos sintéticos sem armazenamento de dados brutos
 
@@ -298,17 +352,23 @@ A geração de exemplos sintéticos requer um modelo capaz de produzir textos re
 
 Os exemplos gerados devem ser representativos das distribuições originais e balanceados entre classes para evitar viés no treinamento. A qualidade das gerações é crítica: se o modelo gerador não for capaz de produzir amostras fiéis das tarefas antigas, o modelo principal pode esquecer informações importantes ou até aprender lembranças incorretas.
 
+Boas práticas incluem: (i) controle de diversidade e cobertura (evitando colapsos para protótipos muito fáceis); (ii) balanceamento entre classes/rótulos por tarefa; (iii) verificação periódica de qualidade por amostragem e avaliação em um validador estável; e (iv) uso de prompts e condicionamentos consistentes com o protocolo de avaliação. Em arranjos híbridos, replay gerativo pode ser combinado com regularização leve (EWC/MAS/SI) e com adapters por tarefa (LoRA), de modo que os sinais sintéticos reforcem regiões de solução já protegidas por penalizações e isolamento paramétrico.
+
 #### 2.5.4. Ciclos de reforço de tarefas anteriores
 
 O replay gerativo intercala exemplos sintéticos de tarefas anteriores durante o treinamento da tarefa atual. A frequência e proporção de exemplos sintéticos misturados com dados reais são hiperparâmetros importantes. Tipicamente, uma fração do batch (por exemplo, 10-30%) é composta por exemplos sintéticos de tarefas anteriores, permitindo que o modelo "revisite" periodicamente conhecimentos passados enquanto aprende novos.
 
 Conceitualmente, é como se o modelo "revisasse" periodicamente as tarefas anteriores enquanto aprende coisas novas, análogo ao ser humano que revisita memórias antigas para não esquecê-las. Esse reforço periódico ajuda a manter as conexões sinápticas relevantes para tarefas anteriores ativas durante o aprendizado de novas tarefas.
 
+Além da proporção, o agendamento (quando e de quais tarefas gerar) importa. Estratégias comuns: (i) amostragem proporcional ao esquecimento estimado (gerar mais onde há maior queda de desempenho); (ii) rodízio por janelas de tarefas para controlar custo; e (iii) reforço focalizado em classes confusas. Em PLN, o replay pode alternar entre instrucionais, exemplos de QA, classificação e sumarização, desde que os condicionamentos sejam mantidos consistentes para evitar contaminações entre formatos de entrada/saída.
+
 #### 2.5.5. Vantagens e limitações
 
 O replay gerativo evita a necessidade de armazenar dados originais, contornando problemas de privacidade e economizando espaço. Um gerador eficaz pode potencialmente produzir uma diversidade maior de exemplos do que um buffer limitado, enriquecendo o treinamento e levando a melhor generalização. Métodos de replay gerativo têm demonstrado sucesso em recuperar desempenho em tarefas antigas quase no nível de métodos com buffer real, quando conseguem gerar amostras fiéis.
 
 As limitações incluem a dependência crítica da qualidade e do balanceamento dos exemplos gerados. Há um risco conhecido de degradação cumulativa: se o modelo principal começa a esquecer uma tarefa, suas gerações daquela tarefa também pioram, criando um ciclo vicioso ("efeito catastrófico circular"). Outra limitação é o custo computacional: gerar dados não é gratuito — frequentemente, para cada minibatch de dados reais, o modelo precisa gerar um número de exemplos antigos, aumentando proporcionalmente o tempo de treinamento.
+
+Mitigações incluem: (i) congelar parcialmente o gerador (ou usar um gerador dedicado) para estabilizar as distribuições sintéticas; (ii) curar prompts e condicionamentos; (iii) usar verificação externa de qualidade (um classificador/avaliador fixo); e (iv) combinar replay com regularização/isolamento paramétrico para reduzir a dependência exclusiva de dados gerados. Em ambientes restritos (privacidade/latência), a combinação de LoRA por tarefa com replay esparso e EWC leve tende a oferecer um bom compromisso entre custo, privacidade e estabilidade.
 
 ### 2.6. Métricas de avaliação em aprendizado contínuo
 
@@ -318,11 +378,15 @@ A Average Accuracy é uma métrica que sumariza o desempenho geral do modelo ap�
 
 Uma ACC elevada indica que, em média, o modelo conseguiu reter bom desempenho em todas as tarefas ao final. Valores baixos indicam esquecimento significativo ou baixa performance geral. Em alguns trabalhos, considera-se também a acurácia média ao longo do tempo (não só no final), para avaliar a trajetória de aprendizado.
 
+Em avaliações mais completas, a área sob a curva de acurácia (AUC ao longo de i) fornece uma noção de estabilidade durante toda a sequência, não apenas no ponto final. Isso captura efeitos transitórios de esquecimento e recuperação (p. ex., após replay), oferecendo um panorama mais fiel do comportamento dinâmico do método.
+
 #### 2.6.2. Forgetting
 
 A métrica de esquecimento foca explicitamente na perda de desempenho que o modelo sofreu em tarefas antigas após aprender novas tarefas. Uma forma comum de defini-la é comparar, para cada tarefa j, a melhor acurácia que o modelo obteve em j em algum ponto do treinamento com a acurácia em j ao final do treinamento de todas as tarefas. Se A_j^max foi a acurácia da tarefa j logo que o modelo terminou de aprender T_j e A_j^final é a acurácia em j após a tarefa final T_N, podemos definir a taxa de esquecimento em j como F_j = A_j^max - A_j^final.
 
 A métrica permite quantificar rigorosamente o impacto destrutivo do aprendizado sequencial e é essencial para validar técnicas cujo objetivo é minimizar esse efeito. Valores positivos indicam esquecimento catastrófico (pior quanto maior), e valores negativos (teoricamente possíveis) indicariam que o modelo melhorou em tarefas antigas mesmo após aprender novas.
+
+Agregados úteis incluem a média de F_j ao longo das tarefas e a distribuição de F_j (picos de esquecimento em poucas tarefas podem indicar conflitos específicos). Em cenários de PLN com tarefas heterogêneas, reportar forgetting por tipo de tarefa (classificação vs geração) ajuda a revelar onde cada mecanismo (EWC, replay, LoRA) é mais eficaz.
 
 #### 2.6.3. Backward Transfer
 
@@ -332,17 +396,23 @@ BWT = (1/(N-1)) Σ_{i=1}^{N-1} (R_{N,i} - R_{i,i})
 
 onde R_{i,i} é a acurácia obtida imediatamente após treinar a tarefa i (pico) e R_{N,i} é a acurácia na tarefa i após treinar todas as N tarefas. Se BWT for negativo, indica esquecimento em média (transferência "para trás" negativa); se for positivo, indica que o modelo melhorou em tarefas antigas depois de aprender novas (transferência para trás positiva). Técnicas bem-sucedidas buscam tornar BWT o mais próximo de 0 possível (idealmente positivo).
 
+Em arranjos híbridos, observar BWT próximo de 0 ao lado de ACC alto sugere bom equilíbrio estabilidade-plasticidade. BWT positivo pode ocorrer quando tarefas futuras melhoram representações úteis às passadas (e.g., pré-treino adicional implícito via replay), enquanto BWT muito negativo indica conflitos severos e pode motivar ampliar isolamento (mais capacidade LoRA, ortogonalidade mais forte) ou reforço (replay mais frequente).
+
 #### 2.6.4. Forward Transfer
 
 O Forward Transfer complementa o BWT medindo a influência que o conhecimento das tarefas anteriores exerce sobre o aprendizado de tarefas futuras. Indica se o modelo aprendeu a aprender: se tarefas passadas fornecem representações ou parâmetros que facilitam a obtenção de melhor desempenho em tarefas novas, mesmo antes de treiná-las extensivamente.
 
 Formalmente, FWT é definido como a média de R_{i,j} para i<j (acurácia em tarefas futuras j antes de treiná-las), normalizada de forma que a contribuição de um classificador aleatório seja subtraída. Um FWT positivo significa que o modelo, por ter aprendido tarefas anteriores, já inicia melhor do que um modelo não treinado quando encontra uma tarefa nova, indicando transferência de conhecimento útil para frente.
 
+Em PLN, FWT alto pode refletir reuso de conhecimento semântico e sintático comum (e.g., embeddings e primeiros blocos de Transformer), ou a presença de adapters que capturam elementos reutilizáveis entre tarefas. Reportar FWT por família de tarefa ajuda a diagnosticar quão generalizáveis são as representações aprendidas sob o protocolo contínuo.
+
 #### 2.6.5. Custo paramétrico e computacional
 
 Além das métricas de desempenho, avalia-se também o custo em recursos de cada estratégia. Uma métrica comum é acompanhar o número de parâmetros adicionais que o modelo adquire por tarefa (model size growth). Idealmente, deseja-se que a eficiência de memória seja alta — o modelo não deve crescer muito conforme N aumenta. Por exemplo, PNNs teriam um crescimento linear pesado (100% por tarefa), enquanto LoRA pode crescer <1% por tarefa; EWC não cresce nada em parâmetros do modelo (0%), mas requer armazenar algumas estatísticas por peso.
 
 Avalia-se também a eficiência computacional — frequentemente medida em tempo de treinamento (ou FLOPs) adicional introduzido pelas técnicas de CL. Métodos com replay (real ou gerativo) praticamente dobram o número de amostras processadas por iteração, enquanto regularizações como EWC têm overhead mínimo no tempo de treino. Para uma avaliação abrangente, não basta verificar se o modelo mantém alta acurácia em todas as tarefas; é preciso também verificar quanto custo de memória e computação foi pago para alcançar aquele resultado.
+
+Para relatórios transparentes, recomenda-se explicitar: (i) parâmetros adicionais por tarefa (e cumulativos); (ii) footprint em memória/VRAM na inferência (com e sem merge de adapters); (iii) tempo total de treinamento (ou FLOPs) por tarefa e por sequência; e (iv) custos de geração no replay (tokens gerados/segundo). Em combinações como QLoRA+LoRA, o backbone quantizado reduz VRAM, enquanto adapters em precisão maior garantem plasticidade com custo marginal.
 
 ### 2.7. Trabalhos correlatos
 
@@ -352,17 +422,23 @@ Existem na literatura estudos que investigam combinações de pares das técnica
 
 Trabalhos específicos sobre O-LoRA têm demonstrado que a imposição de ortogonalidade entre adaptadores reduz efetivamente a interferência entre tarefas, oferecendo um isolamento estrutural eficiente. No entanto, esses estudos frequentemente focam em combinações de pares, não explorando sistematicamente a integração de múltiplos mecanismos simultaneamente.
 
+Exemplos típicos de pares incluem: (i) PNN + distilação/regularização (Progress & Compress), reduzindo o custo de manter colunas antigas; (ii) LoRA + EWC, protegendo o backbone enquanto adapters fornecem plasticidade barata; (iii) LoRA + replay (real/gerativo), reforçando rotas de gradiente úteis; (iv) projeções ortogonais (OGD/OWM) + adapters, minimizando conflito direto entre atualizações. No contexto de PLN, estudos também exploram prompt-based CL (L2P/DualPrompt) combinado com replay leve, realçando a complementaridade entre mecanismos de parametrização eficiente e reforço de dados.
+
 #### 2.7.2. Abordagens alternativas
 
 Existem também abordagens alternativas que não são diretamente combinadas neste trabalho, mas oferecem insights relevantes. HAT (Hard Attention to the Task) usa máscaras aprendidas para proteger parâmetros importantes, enquanto PackNet usa pruning para alocar subnetworks por tarefa. L2P e DualPrompt são métodos baseados em prompt tuning que armazenam prompts por tarefa em vez de adaptar pesos internos.
 
 Essas abordagens alternativas demonstram a diversidade de estratégias disponíveis para aprendizado contínuo e destacam diferentes trade-offs entre isolamento, eficiência e flexibilidade. Embora não sejam diretamente incorporadas nesta proposta, oferecem perspectivas valiosas sobre possíveis extensões futuras.
 
+Em mais detalhes: (i) HAT aprende máscaras binárias/duras por tarefa para bloquear atualizações em parâmetros críticos, reduzindo interferência sem crescimento paramétrico expressivo; (ii) PackNet realiza pruning iterativo para “liberar” capacidade que será reatribuída a novas tarefas; (iii) L2P (Wang et al., 2022) aprende um conjunto de prompts chave-valores e recupera um subconjunto para cada entrada, viabilizando CL sem rehearsal; (iv) DualPrompt estende a ideia com prompts gerais e específicos por tarefa, melhorando o roteamento de conhecimento. Essas linhas evidenciam que parametrização eficiente não se limita a adapters como LoRA; prompts e sparsity também constituem alavancas de controle de interferência.
+
 #### 2.7.3. Lacunas identificadas na literatura
 
 A principal lacuna identificada é a falta de uma avaliação sistemática e integrada de um arranjo que combine PNN, O-LoRA, EWC e replay gerativo sob um mesmo protocolo experimental reprodutível. Enquanto há evidências sobre eficácia de combinações de pares, não há estudos que investiguem como múltiplos mecanismos podem se complementar e potencialmente oferecer sinergias superiores à soma das partes individuais.
 
 Além disso, há uma falta de protocolos padronizados que permitam comparações justas entre diferentes abordagens, dificultando a identificação de quais combinações são mais eficazes para diferentes contextos. Esta lacuna motiva a proposta deste trabalho, que busca fornecer uma avaliação abrangente e reprodutível de uma arquitetura híbrida integrada.
+
+Outra lacuna diz respeito à alocação proativa de subespaços para adapters ao longo de sequências longas de tarefas. Trabalhos recentes propõem escolher bases com baixa interferência prevista (p. ex., PLAN, 2025), mas ainda são escassos benchmarks em PLN cobrindo tarefas heterogêneas, protocolos task-agnostic e orçamentos de memória realistas. Também faltam avaliações que cruzem métricas de desempenho com custos (memória/VRAM, FLOPs, latência), essenciais para adoção prática.
 
 ---
 
@@ -376,11 +452,17 @@ A arquitetura proposta utiliza modelos base de porte moderado para garantir viab
 
 O modelo base é mantido majoritariamente congelado durante todo o processo de aprendizado contínuo, com apenas componentes específicos sendo parcialmente destravados para aplicação de EWC. A cabeça de classificação padrão (um classificador linear sobre a representação [CLS]) é mantida genérica e pode ser adaptada por tarefa através dos adaptadores LoRA (Hu et al., 2021). Esta configuração permite que o modelo compartilhe conhecimento linguístico fundamental enquanto especializa-se para tarefas específicas através de módulos leves.
 
+Para evitar conflito de rótulos entre tarefas com espaços de classes distintos, utilizamos cabeças de classificação específicas por tarefa no cenário task-aware (3.5.2). Ou seja, a arquitetura da cabeça é compartilhada, mas os pesos do último layer (logits) são instanciados por tarefa. Em setups com tarefas binárias (e.g., sentimento) e multiclasse (e.g., DBPedia), isso impede colisão de rótulos e simplifica a avaliação. Opcionalmente, em ambientes com restrições de memória, um único cabeçote compartilhado pode ser usado com mapeamentos por tarefa, mas adotamos cabeças por tarefa para clareza experimental.
+
+Quando disponível, avaliamos também uma variação com quantização do backbone (QLoRA; Dettmers et al., 2023), mantendo o backbone congelado em 4/8 bits e treinando apenas adapters em maior precisão. Essa configuração reduz VRAM sem alterar a lógica do arranjo e é especialmente útil em GPUs de 16GB.
+
 #### 3.1.2. Estrutura modular inspirada em PNN
 
 A arquitetura incorpora princípios de modularização progressiva inspirados em PNN (Rusu et al., 2016), mas de forma parametricamente eficiente. Em vez de adicionar colunas completas de rede para cada tarefa, adicionamos apenas conjuntos de adaptadores LoRA leves. Cada tarefa recebe seu próprio conjunto de adaptadores que são congelados após o treinamento dessa tarefa, criando isolamento estrutural similar ao das PNNs, mas com crescimento paramétrico muito menor.
 
 A estrutura modular permite que adaptadores de tarefas anteriores sejam mantidos em memória e ativados durante a inferência conforme necessário. Essa abordagem mantém a propriedade de isolamento completa das PNNs (adaptadores anteriores não são atualizados durante treinamento de novas tarefas) enquanto reduz drasticamente o custo de armazenamento e computação.
+
+Implementação: os adaptadores por tarefa são injetados de forma homogênea nos mesmos pontos da arquitetura (projeções de atenção e/ou MLP), permitindo comparação justa entre tarefas. Os módulos são nomeados com prefixos por tarefa (p. ex., t1_attn_q, t1_ffn_up) e armazenados em um registry para ativação condicionada pelo ID de tarefa. Caso conexões laterais estejam habilitadas (3.1.4), os outputs intermediários dos adaptadores antigos são disponibilizados via hooks, com mecanismos de atenção leve para combinar representações sem atualizar módulos congelados.
 
 #### 3.1.3. Adaptadores LoRA por tarefa com restrição ortogonal
 
@@ -388,11 +470,15 @@ Para cada nova tarefa T_k, inicializamos um novo conjunto de adaptadores LoRA qu
 
 Durante o treinamento dos adaptadores para T_k, impomos restrições ortogonais (O-LoRA) que garantem que os novos adaptadores ocupem subespaços distintos dos adaptadores de tarefas anteriores (T_1, ..., T_{k-1}). Isso é feito através de um termo de regularização na função de perda que penaliza projeções dos novos adaptadores nos subespaços gerados pelos adaptadores anteriores, minimizando interferência entre tarefas (inspirado em OWM/OGD; Zeng et al., 2019; Farajtabar et al., 2019).
 
+Concretamente, denotando A_k as colunas da base de baixo ranque da tarefa k (e A_<k a união de bases anteriores), adotamos: L_ortho = Σ_i ||Proj_{span(A_<k)}(a_{k,i})||², onde a_{k,i} é uma coluna de A_k. Alternativamente, utilizamos penalização de correlação/cosseno entre direções de A_k e A_<k. Em tarefas com maior conflito, aplicamos projeção tipo Gram–Schmidt após cada atualização para reforçar ortogonalidade. Um agendamento crescente de λ_ortho ao longo das épocas ajuda a preservar plasticidade no início e aumentar isolamento próximo da convergência. Trabalhos recentes investigam alocação proativa de bases com mínima interferência (PLAN; Wang, Zhuang & Zhang, 2025), alinhados com esse princípio.
+
 #### 3.1.4. Conexões laterais opcionais para transferência
 
 Para promover transferência positiva entre tarefas, implementamos conexões laterais opcionais inspiradas em PNN (Rusu et al., 2016). Essas conexões permitem que o módulo atual (adaptadores da tarefa corrente) consuma representações dos módulos anteriores (adaptadores de tarefas passadas) sem atualizá-los. As conexões podem ser implementadas através de concatenação de features, soma ponderada, ou mecanismos de atenção que aprendem a combinar informações de diferentes adaptadores.
 
 As conexões laterais são configuráveis e podem ser habilitadas ou desabilitadas para análise de ablação, permitindo quantificar seu impacto na transferência forward e no desempenho geral. Quando habilitadas, elas adicionam um pequeno overhead computacional mas podem melhorar significativamente o desempenho inicial em novas tarefas através de aproveitamento de conhecimento prévio.
+
+Para evitar transferência negativa, aplicamos normalização e gating aprendível por camada, permitindo ao modelo atenuar contribuições de tarefas pouco relacionadas. Em Transformers, a opção adotada é um bloco de atenção cruzada leve entre a representação corrente e caches de saídas intermediárias de adaptadores antigos. Pesos dessas conexões são treinados apenas para a tarefa corrente, mantendo módulos antigos congelados. Essa escolha preserva o princípio de não interferência direta em tarefas anteriores.
 
 #### 3.1.5. Aplicação de EWC em componentes compartilhados
 
@@ -400,11 +486,15 @@ O EWC é aplicado seletivamente apenas aos componentes compartilhados que perman
 
 Após o treinamento em cada tarefa T_i, estimamos a matriz de informação de Fisher sobre os dados de T_i para identificar quais pesos são críticos para o desempenho nessa tarefa. Nas tarefas subsequentes, incorporamos um termo de penalização EWC na função de perda que desencoraja grandes mudanças nesses pesos críticos, preservando conhecimento fundamental enquanto permite ajustes necessários para novas tarefas.
 
+Adotamos a aproximação diagonal de Fisher e a variante Online EWC (Schwarz et al., 2018) com fator de decaimento para evitar acúmulo excessivo de rigidez ao longo de longas sequências. Em prática, amostramos um subconjunto estratificado de exemplos por tarefa para estimar Fisher (p. ex., 5k–20k exemplos, conforme disponibilidade), garantindo custo controlado. O termo EWC é aplicado apenas aos pesos parcialmente destravados; adaptadores LoRA permanecem livres, fornecendo o canal principal de plasticidade.
+
 #### 3.1.6. Integração de replay gerativo parcimonioso
 
 O replay gerativo é implementado de forma parcimoniosa para minimizar custo computacional. Utilizamos um modelo gerador leve (que pode ser o próprio modelo base configurado para geração ou um modelo auxiliar) para produzir exemplos sintéticos das tarefas anteriores, seguindo a linha de Deep Generative Replay (Shin et al., 2017). Antes de cada época de treinamento na tarefa atual T_k, geramos um conjunto balanceado de exemplos sintéticos representando as tarefas T_1, ..., T_{k-1}.
 
 Esses exemplos sintéticos são intercalados com os dados reais da tarefa atual durante o treinamento, compondo tipicamente 10-30% de cada batch. A geração é guiada por prompts estruturados que especificam a tarefa e a classe desejada, e os exemplos gerados são validados automaticamente para garantir qualidade mínima antes de serem incorporados ao treinamento.
+
+Práticas adotadas: (i) quotas por classe/tarefa para manter balanceamento; (ii) filtros automáticos de qualidade (comprimento mínimo, vocabulário permitido, score de um classificador estável); (iii) cache das gerações por época para reuso em múltiplos batches; (iv) hiperparâmetros de decodificação (temperature 0.7–1.0, top-p 0.9) calibrados em validação. Quando há risco de deriva (degradação das amostras ao longo do tempo), congelamos o gerador ou utilizamos um gerador dedicado para estabilizar a distribuição, à semelhança do LAMOL (Sun et al., 2020).
 
 ### 3.2. Protocolo experimental
 
@@ -414,11 +504,15 @@ O protocolo experimental utiliza uma sequência de cinco tarefas de classificaç
 
 A ordem das tarefas foi escolhida para simular mudanças de domínio progressivas — partindo de notícias formais, passando por avaliações de consumidores, até dados enciclopédicos e perguntas de usuários. Essa diversidade de domínios testa a robustez do método a diferentes distribuições textuais e desafia o modelo a manter conhecimento geral enquanto especializa-se para domínios específicos.
 
+Os espaços de rótulos são disjuntos entre tarefas e a avaliação é task-aware (3.5.2), com cabeças por tarefa. Mantemos splits canônicos por dataset quando disponíveis; caso contrário, adotamos 70/15/15 (treino/validação/teste). Para reprodutibilidade, publicamos as seeds, a ordem fixa das tarefas e o mapeamento de rótulos em artefatos de experimento. As sementes são mantidas constantes ao comparar métodos/baselines para reduzir variância de amostragem.
+
 #### 3.2.2. Preparação e pré-processamento dos dados
 
 Cada dataset é preparado seguindo práticas padrão de pré-processamento de texto. Removemos metadados irrelevantes, normalizamos espaços em branco e caracteres especiais, e garantimos que os textos estejam em formato adequado para o tokenizador do modelo base. Para tarefas de classificação multiclasse, mantemos todas as classes originais para maximizar a diversidade do desafio.
 
 Os datasets são divididos em conjuntos de treino, validação e teste seguindo proporções padrão (tipicamente 70/15/15 ou conforme disponibilidade dos dados originais). É importante notar que seguimos um regime exemplar-free: após o treinamento em uma tarefa, não há acesso aos dados brutos dessa tarefa, exceto pelos exemplos sintéticos gerados para replay.
+
+Higiene dos dados: removemos duplicatas estritas, entradas vazias e exemplos com comprimento fora de limites definidos (p. ex., truncamos textos acima de 512 tokens). Não realizamos lowercasing quando utilizamos tokenizadores sensíveis a caixa (BERT), preservando o pré-treino. Para fairness, mantemos os mesmos filtros para todos os métodos comparados e registramos estatísticas de pré-processamento (nº de exemplos removidos/truncados) por tarefa.
 
 #### 3.2.3. Tokenização e configurações de comprimento máximo
 
@@ -426,11 +520,15 @@ A tokenização segue o tokenizador do modelo base (WordPiece para BERT). Config
 
 Tokens especiais ([CLS], [SEP]) são adicionados conforme necessário pela arquitetura do modelo. Para tarefas que requerem pares de sequências, utilizamos o formato apropriado de separação. A tokenização é realizada uma vez antes do treinamento e os resultados são armazenados para evitar reprocessamento.
 
+Usamos padding dinâmico por batch e ordenação aproximada por comprimento (bucketing) para reduzir padding médio e aumentar throughput. Em cenários com memória limitada, habilitamos truncamento agressivo (256 tokens) para datasets com textos longos, reportando os comprimentos efetivos adotados por tarefa.
+
 #### 3.2.4. Balanceamento por amostragem estratificada
 
 Para garantir que cada classe seja adequadamente representada durante o treinamento, aplicamos amostragem estratificada quando necessário. Isso é particularmente importante para datasets desbalanceados como DBPedia e Yahoo Answers, onde algumas classes podem ter muito mais exemplos que outras.
 
 O balanceamento é aplicado tanto nos conjuntos de treino quanto nos exemplos sintéticos gerados para replay, garantindo que o modelo veja representação adequada de todas as classes durante o treinamento contínuo. Isso previne viés em direção a classes majoritárias e garante avaliação justa do desempenho em todas as categorias.
+
+Como alternativa à amostragem, avaliamos ponderação por classe na função de perda (class weights) para cenários com forte desbalanceamento, mantendo a mesma estratégia também sobre exemplos gerados. Selecionamos a política (amostragem vs. pesos) por validação, privilegiando a que resulta em maior F1 macro sem inflar custo computacional.
 
 ### 3.3. Fluxo de treinamento
 
@@ -447,11 +545,15 @@ Para cada tarefa T_k na sequência:
 6. Após convergência, estimamos matriz de Fisher para EWC nas tarefas futuras
 7. Avaliamos o modelo em todas as tarefas vistas até então (T_1, ..., T_k)
 
+Agendamento de treino: utilizamos otimizador AdamW com scheduler linear com warmup (p. ex., 6–10% dos steps totais) e early stopping por métrica de validação da tarefa corrente. O número de épocas por tarefa é limitado (p. ex., 3–5) para manter custo controlado; em datasets grandes, usamos orçamento de steps fixo por tarefa. Durante toda a sequência, mantemos seeds fixas e registramos R_{i,j} após cada tarefa para cálculo de métricas agregadas (3.5.4).
+
 #### 3.3.2. Inicialização e congelamento de adaptadores anteriores
 
 Novos adaptadores LoRA são inicializados seguindo a prática padrão: matrizes A são inicializadas aleatoriamente (distribuição normal pequena) e matrizes B são inicializadas com zeros, garantindo que ΔW = 0 inicialmente e o modelo começa com o comportamento do modelo base para a nova tarefa.
 
 Adaptadores de tarefas anteriores são completamente congelados — seus parâmetros não são atualizados durante o treinamento da tarefa atual. Isso garante isolamento estrutural e previne interferência destrutiva. Os adaptadores congelados permanecem em memória e podem ser ativados durante a inferência quando necessário para a tarefa correspondente.
+
+Para maximizar a estabilidade inicial, mantemos dropout de LoRA desabilitado nas primeiras épocas e, opcionalmente, aplicamos uma rampa de dropout leve posteriormente. Em cenários com conexões laterais, apenas os parâmetros de combinação/gating da tarefa corrente são treinados, mantendo estritamente congelados os caminhos de tarefas pretéritas.
 
 #### 3.3.3. Cálculo da matriz de Fisher para EWC
 
@@ -459,11 +561,15 @@ Após o treinamento em cada tarefa T_i, estimamos a matriz de informação de Fi
 
 A matriz de Fisher é calculada avaliando o gradiente da função de perda em relação aos parâmetros sobre os dados da tarefa, e então computando F_j = E[(∂L/∂θ_j)²] para cada parâmetro θ_j. Os valores são armazenados junto com os valores dos parâmetros após treinamento (θ_j*) para uso nas tarefas subsequentes através do termo de penalização EWC.
 
+Para reduzir custo, calculamos Fisher em modo avaliação (sem dropout) e com batches moderados (p. ex., 64–128 exemplos) amostrados estratificadamente. Adotamos amortização online: F ← γ F + (1−γ) F_atual, com γ∈[0.8,0.95], conforme Online EWC (Schwarz et al., 2018). Essa estratégia previne superfixação em tarefas remotas e preserva plasticidade para tarefas recentes.
+
 #### 3.3.4. Intercalação de exemplos sintéticos para replay
 
 Antes de cada época de treinamento na tarefa atual T_k, geramos um conjunto balanceado de exemplos sintéticos representando as tarefas anteriores T_1, ..., T_{k-1}. A geração é guiada por prompts estruturados que especificam a tarefa e a classe desejada, e os exemplos são gerados utilizando o modelo configurado para geração de texto.
 
 Os exemplos sintéticos são intercalados com os dados reais da tarefa atual durante o treinamento, compondo tipicamente 10-30% de cada batch. Essa proporção é um hiperparâmetro que pode ser ajustado, mas valores muito altos podem reduzir a plasticidade para a tarefa atual, enquanto valores muito baixos podem não fornecer reforço suficiente para tarefas anteriores.
+
+Políticas de amostragem: (i) uniformemente entre tarefas anteriores; (ii) proporcional ao esquecimento estimado por tarefa (maior quota para tarefas com maior queda de desempenho); (iii) foco em classes minoritárias para evitar viés. Mantemos um orçamento fixo de tokens gerados por tarefa/época para controlar custo. Gerações são cacheadas e invalidadas ao alternar de tarefa.
 
 #### 3.3.5. Função de perda composta
 
@@ -479,6 +585,13 @@ onde:
 
 A perda sobre exemplos sintéticos de tarefas anteriores também contribui para L_task, reforçando conhecimentos passados enquanto aprendemos a nova tarefa.
 
+Instanciação dos termos:
+- L_task: cross-entropy padrão; quando aplicável, ponderada por classe; inclui exemplos reais de T_k e sintéticos de T_{<k}.
+- L_ortho: soma das normas das projeções de colunas de A_k no span das bases A_{<k} (ou penalização por cosseno). Implementamos uma versão diferenciável e eficiente por camada.
+- L_ewc: λ Σ_j 0.5 F_j (θ_j − θ*_j)² sobre pesos parcialmente destravados; Online EWC com decaimento.
+
+Usamos um scheduler para λ_ortho (cresce ao longo do treino) e λ_ewc (constante por tarefa), calibrados em validação. Essa combinação preserva plasticidade no início e endurece restrições rumo à convergência.
+
 #### 3.3.6. Hiperparâmetros
 
 Seguimos diretrizes conservadoras para calibração de hiperparâmetros baseadas em práticas estabelecidas na literatura. Utilizamos AdamW como otimizador com taxa de aprendizado na faixa de 1e-4 a 3e-4 para adaptadores LoRA, e weight decay até 0,01. Ranks LoRA são configurados entre 4 e 8, com alpha conforme prática do PEFT (tipicamente alpha = rank ou 2*rank).
@@ -486,6 +599,8 @@ Seguimos diretrizes conservadoras para calibração de hiperparâmetros baseadas
 Para o EWC, o hiperparâmetro λ é calibrado através de busca em conjunto de validação, tipicamente variando entre 100 e 10000 dependendo da escala dos valores de Fisher. Para ortogonalidade, o hiperparâmetro λ_ortho é tipicamente configurado entre 0,1 e 1,0, balanceando isolamento com plasticidade.
 
 Parâmetros de decodificação para replay gerativo (temperature, top-p) são ajustados por tarefa para garantir qualidade das gerações, e early stopping é aplicado com base na métrica de validação corrente para evitar overfitting.
+
+Scheduler de LR: linear com warmup de 6–10% dos steps; gradiente clipping (p. ex., 1.0) para estabilidade; batch efetivo obtido via acúmulo de gradiente. Dropout de LoRA 0.0–0.1 conforme validação. Em setups com QLoRA, seguimos as configurações recomendadas (Dettmers et al., 2023) para quantização e escalonamento do LR. As buscas de hiperparâmetros são restritas e compartilhadas entre métodos comparados, para evitar viés.
 
 ### 3.4. Ambiente computacional
 
@@ -495,17 +610,23 @@ A implementação utiliza PyTorch como framework principal de deep learning, apr
 
 Avalanche (ContinualAI) é utilizado para o protocolo de aprendizado contínuo, gerenciamento de sequências de tarefas, e implementação de EWC. O framework também fornece utilitários para avaliação cumulativa e cálculo de métricas padronizadas de CL. Componentes customizados são desenvolvidos para integração de O-LoRA, replay gerativo, e conexões laterais.
 
+Versões e reprodutibilidade: utilizamos versões estáveis de PyTorch e Transformers (Wolf et al., 2020), e a biblioteca Avalanche (Lomonaco et al., 2021). Fixamos seeds de PyTorch/NumPy/Python e habilitamos, quando viável, flags determinísticas. Scripts de execução registram hashes de commit e versões de dependências para reprodutibilidade.
+
 #### 3.4.2. Configuração de hardware
 
 Os experimentos são projetados para execução em uma única GPU intermediária (por exemplo, NVIDIA T4 com 16GB VRAM), garantindo viabilidade para contextos acadêmicos com recursos limitados. Utilizamos precisão mista (mixed precision) através de torch.cuda.amp para reduzir uso de memória e acelerar treinamento, permitindo batch sizes maiores e reduzindo tempo de treinamento.
 
 Gradiente checkpointing é aplicado quando necessário para modelos maiores, trocando computação por memória e permitindo processar sequências mais longas ou batches maiores dentro das limitações de VRAM disponível.
 
+Quando aplicável, empregamos QLoRA para quantizar o backbone e reduzir VRAM mantendo adapters em maior precisão (Dettmers et al., 2023). Mixed precision segue práticas de Micikevicius et al. (2018), com escalonamento de perda automático e monitoração de under/overflow. Reportamos picos de VRAM e tempos por tarefa (3.5.5).
+
 #### 3.4.3. Acúmulo de gradiente e otimização de memória
 
 Para otimizar uso de memória e permitir batch sizes efetivos maiores, utilizamos acúmulo de gradiente (gradient accumulation). Isso permite simular batch sizes maiores sem aumentar proporcionalmente o uso de VRAM, dividindo o batch em múltiplos micro-batches e acumulando gradientes antes de atualizar parâmetros.
 
 Outras otimizações de memória incluem: remoção de gradientes não utilizados através de torch.no_grad() quando apropriado, uso de tipos de dados eficientes (float16 onde possível), e carregamento eficiente de dados através de DataLoader com num_workers otimizado.
+
+Também adotamos ativação de atenção eficiente quando disponível, desabilitamos criação de gráficos desnecessários em passagens de validação e utilizamos pin_memory e prefetch para aumentar throughput de E/S. Em cenários com geração frequente, cacheamos prompts e outputs para reduzir chamadas redundantes ao gerador.
 
 ### 3.5. Protocolo de avaliação
 
@@ -515,17 +636,23 @@ Após o treinamento em cada tarefa T_k, avaliamos o modelo em todas as tarefas v
 
 A avaliação é realizada sobre conjuntos de teste dedicados para cada tarefa, garantindo que não há contaminação de dados de treino. Os resultados são registrados em uma matriz de desempenho R onde R_{i,j} representa a acurácia na tarefa j após ter treinado até a tarefa i.
 
+Além de acurácia, coletamos F1 por tarefa (3.5.3) e calculamos métricas agregadas (3.5.4). Mantemos scripts que exportam a matriz R e relatórios por semente, facilitando reuso dos resultados para análises posteriores (e.g., identificação de tarefas mais afetadas por esquecimento).
+
 #### 3.5.2. Cenário task-aware
 
 Avaliamos em cenário task-aware, onde o ID da tarefa é fornecido durante a inferência para ativar o conjunto correto de adaptadores. Esta é uma premissa comum em aprendizado contínuo e explicitada claramente no trabalho. Embora seja uma limitação em relação a cenários completamente task-agnostic, é uma suposição razoável para muitas aplicações práticas onde o contexto permite identificar a tarefa.
 
 O cenário task-aware facilita a avaliação e permite focar nos mecanismos de defesa contra esquecimento sem a complexidade adicional de seleção automática de adaptadores, que pode ser explorada em trabalhos futuros.
 
+Na prática, roteamos a entrada para a cabeça e o conjunto de adaptadores da tarefa indicada. Para estudos futuros task-agnostic, duas alternativas são: (i) selecionar adapters via um roteador leve (classificador sobre embeddings) ou (ii) combinar múltiplos adapters (AdapterFusion; Pfeiffer et al., 2021). Mantemos o recorte task-aware alinhado ao objetivo principal de isolar e medir mitigação do esquecimento.
+
 #### 3.5.3. Métricas por tarefa
 
 Para cada tarefa individual, reportamos acurácia (fração de predições corretas) e F1-score (média harmônica de precisão e recall, útil para tarefas desbalanceadas). Essas métricas fornecem visão granular do desempenho em cada tarefa e permitem identificar tarefas particularmente desafiadoras ou vulneráveis ao esquecimento.
 
 F1-score é especialmente importante para tarefas multiclasse desbalanceadas como DBPedia e Yahoo Answers, onde acurácia pode ser enganosa devido a distribuições de classe desiguais.
+
+Reportamos F1 macro e, quando pertinente, micro, para refletir desempenho em presença de distribuições desbalanceadas. Também disponibilizamos matrizes de confusão por tarefa para análise qualitativa de erros recorrentes e classes mais suscetíveis a esquecimento.
 
 #### 3.5.4. Métricas agregadas
 
@@ -538,6 +665,8 @@ Além das métricas por tarefa, reportamos métricas agregadas que sumarizam o d
 
 Essas métricas fornecem visão holística do desempenho do modelo ao longo da sequência de tarefas e permitem comparação quantitativa com outros métodos.
 
+Implementação: ACC é a média de R_{N,j}; BWT/FWT seguem definições de Lopez-Paz & Ranzato (2017); Forgetting é a média de A_j^max − A_j^final. Também reportamos AUC da acurácia ao longo de i (área sob a curva R_{i,·}) para capturar a estabilidade durante todo o processo, não apenas no ponto final.
+
 #### 3.5.5. Custos computacionais
 
 Além do desempenho, quantificamos os custos computacionais de cada abordagem:
@@ -548,11 +677,15 @@ Além do desempenho, quantificamos os custos computacionais de cada abordagem:
 
 Essas métricas são essenciais para avaliar viabilidade prática das abordagens e fazer trade-offs informados entre desempenho e eficiência.
 
+Reportamos ainda: (i) tokens processados/gerados por tarefa (útil para métodos com replay gerativo); (ii) throughput (amostras/s) de treino e geração; e (iii) parâmetros adicionais por tarefa e cumulativos. Os números são aferidos sob configurações padronizadas de hardware (3.4.2) e seeds, e acompanhados de desvios-padrão.
+
 #### 3.5.6. Múltiplas sementes e estatísticas
 
 Todos os experimentos são executados com múltiplas sementes aleatórias (tipicamente 3) para garantir robustez dos resultados e permitir cálculo de estatísticas. Reportamos média e desvio-padrão de todas as métricas principais, permitindo avaliação da variabilidade e significância estatística das diferenças observadas.
 
 A variação entre sementes permite identificar se ganhos observados são consistentes ou dependem de inicialização aleatória específica, aumentando confiança nos resultados reportados.
+
+Quando apropriado, reportamos testes de significância (p. ex., t-test pareado sobre ACC ou BWT) entre o método proposto e baselines, respeitando suposições estatísticas. Também incluímos tamanho de efeito (Cohen's d) para quantificar relevância prática das diferenças.
 
 ### 3.6. Baselines e ablações
 
@@ -562,17 +695,23 @@ Como baseline representativo de esquecimento catastrófico sem mitigação, trei
 
 Esperamos observar degradação significativa do desempenho em tarefas anteriores à medida que novas tarefas são aprendidas, fornecendo linha de base para comparar a efetividade das técnicas propostas.
 
+Configuração: mesmo otimizador/scheduler dos demais métodos, sem EWC/replay/ortogonalidade. Para justiça, mantemos número de épocas/steps e critérios de early stopping idênticos por tarefa. Este baseline tipicamente apresenta BWT negativo pronunciado e forgetting alto.
+
 #### 3.6.2. LoRA único sequencial
 
 Como baseline intermediário, treinamos um único conjunto de adaptadores LoRA (sem ortogonalidade) sequencialmente reutilizado para todas as tarefas. Esta abordagem demonstra a eficiência paramétrica do LoRA mas também mostra que LoRA puro não resolve esquecimento quando usado sequencialmente.
 
 Comparação com este baseline permite quantificar o valor adicional da ortogonalidade (O-LoRA) em reduzir interferência entre tarefas.
 
+Configuração: um único conjunto de adapters LoRA é reaproveitado e atualizado a cada tarefa (sem congelamento por tarefa), mantendo o backbone congelado. Espera-se melhor eficiência paramétrica em relação ao fine-tuning completo, porém com esquecimento relevante devido à reutilização do mesmo subespaço de atualização.
+
 #### 3.6.3. Joint training
 
 Como upper bound teórico, treinamos o modelo simultaneamente em todas as tarefas com acesso completo a todos os dados (joint training). Esta abordagem não é viável em cenários de aprendizado contínuo real, mas fornece referência do desempenho máximo possível se não houvesse restrições de dados e tempo.
 
 A diferença entre joint training e os métodos de aprendizado contínuo quantifica o custo de aprender sequencialmente versus simultaneamente, e permite avaliar quão próximos os métodos propostos estão do limite teórico.
+
+Configuração: mistura balanceada de todas as tarefas, com splits originais e sem restrições de memória/dados. Usamos os mesmos hiperparâmetros globais e treinamos até convergência em validação global. Este resultado não é comparável diretamente em termos de custo, mas serve como referência de desempenho máximo.
 
 #### 3.6.4. Ablações seletivas
 
@@ -584,6 +723,8 @@ Para isolar a contribuição individual de cada componente, realizamos ablaçõe
 - **Sem conexões laterais**: Desabilita conexões laterais entre módulos
 
 Essas ablações permitem quantificar o valor marginal de cada componente e identificar sinergias ou redundâncias entre diferentes mecanismos. A análise de ablação é essencial para validar que a integração oferece ganhos superiores à soma das partes individuais e para identificar quais componentes são mais críticos para o desempenho final.
+
+Executamos todas as ablações sob o mesmo orçamento de treino (épocas/steps), seeds e protocolo de avaliação. Reportamos ACC, BWT, FWT, Forgetting e custos (3.5.5), com médias e desvios-padrão. Adicionalmente, consideramos uma ablação com Online EWC desligado (EWC offline) para avaliar o efeito do decaimento da Fisher em sequências mais longas.
 
 ---
 
@@ -930,6 +1071,35 @@ VASWANI, A.; SHAZEER, N.; PARMAR, N.; USZKOREIT, J.; JONES, L.; GOMEZ, A. N.; KA
 ZENG, G.; CHEN, Y.; CUI, B.; YU, S. Continual Learning of Context-Dependent Processing in Neural Networks (OWM). Nature Machine Intelligence, v. 1, p. 364–372, 2019. DOI: 10.1038/s42256-019-0080-x.
 
 ZHANG, X.; ZHAO, J.; LECUN, Y. Character-Level Convolutional Networks for Text Classification. In: Advances in Neural Information Processing Systems (NeurIPS 2015). p. 649–657.
+
+ZENKE, F.; POOLE, B.; GANGULI, S. Continual Learning Through Synaptic Intelligence. In: Proceedings of the 34th International Conference on Machine Learning (ICML 2017). PMLR 70, p. 3987–3995. Disponível em: https://arxiv.org/abs/1703.04200
+. Acesso em: 1 nov. 2025.
+
+CHAUDHRY, A.; RANZATO, M.; ROHRBACH, M.; ELHOSEINY, M. Efficient Lifelong Learning with A-GEM. In: International Conference on Learning Representations (ICLR 2019). Disponível em: https://arxiv.org/abs/1812.00420
+. Acesso em: 1 nov. 2025.
+
+REBUFFI, S.-A.; KOLESNIKOV, A.; SPERL, G.; LAMPERT, C. H. iCaRL: Incremental Classifier and Representation Learning. In: IEEE Conference on Computer Vision and Pattern Recognition (CVPR 2017). Disponível em: https://arxiv.org/abs/1611.07725
+. Acesso em: 1 nov. 2025.
+
+SERRÀ, J.; SURÍS, D.; MIRON, M.; KARATZOGLOU, A. Overcoming catastrophic forgetting with hard attention to the task. arXiv:1801.01423, 2018. Disponível em: https://arxiv.org/abs/1801.01423
+. Acesso em: 1 nov. 2025.
+
+WANG, Z.; ZHANG, Z.; LEE, C.-Y.; ZHANG, H.; SUN, R.; REN, X.; SU, G.; PEROT, V.; DY, J.; PFISTER, T. Learning to Prompt for Continual Learning. arXiv:2112.08654, 2021. Disponível em: https://arxiv.org/abs/2112.08654
+. Acesso em: 1 nov. 2025.
+
+WANG, Z.; ZHANG, Z.; EBRAHIMI, S.; SUN, R.; ZHANG, H.; LEE, C.-Y.; REN, X.; SU, G.; PEROT, V.; DY, J.; PFISTER, T. DualPrompt: Complementary Prompting for Rehearsal-free Continual Learning. In: European Conference on Computer Vision (ECCV 2022). Disponível em: https://arxiv.org/abs/2204.04799
+. Acesso em: 1 nov. 2025.
+
+WANG, X.; ZHUANG, Z.; ZHANG, Y. PLAN: Proactive Low-Rank Allocation for Continual Learning. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV 2025), Honolulu, USA (aceito). arXiv:2510.21188. Disponível em: https://arxiv.org/abs/2510.21188
+. Acesso em: 1 nov. 2025.
+
+WOLF, T.; DEBERT, L.; SANH, V.; CHAUMOND, J.; DELANGUE, C.; MOI, A.; CISTAC, P.; RAULT, T.; LOUF, R.; FUNTOWICZ, M.; BRETAGNOLLE, L.; et al. Transformers: State-of-the-Art Natural Language Processing. In: Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing: System Demonstrations. 2020. DOI: 10.18653/v1/2020.emnlp-demos.6.
+
+LOMONACO, V.; MALTONI, D.; SHE, Q.; CANGELOSI, A.; SHAPKINA, T.; EDAKKARAN, A.; et al. Avalanche: an End-to-End Library for Continual Learning. In: Proceedings of CVPR Workshops 2021. arXiv:2104.00405. Disponível em: https://arxiv.org/abs/2104.00405
+. Acesso em: 1 nov. 2025.
+
+MICIKEVICIUS, P.; NARANG, S.; ALBEN, J.; DUNGAN, P.; ELMORE, R.; GARCÍA, D.; GRAHAM, N.; et al. Mixed Precision Training. In: International Conference on Learning Representations (ICLR 2018) Workshop. arXiv:1710.03740. Disponível em: https://arxiv.org/abs/1710.03740
+. Acesso em: 1 nov. 2025.
 
 ---
 

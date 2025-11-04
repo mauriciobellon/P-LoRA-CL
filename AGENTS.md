@@ -8,7 +8,7 @@
 
 ## Build, Test, and Development Commands
 - Pin the toolchain with `uv python install 3.11` to align everyone on the same interpreter.
-- Create or refresh the environment via `uv venv` and sync dependencies with `uv pip install -r requirements.txt`.
+- Create or refresh the environment via `uv venv` and sync dependencies with `uv pip install -e .` or `uv pip install -e ".[dev]"` for development dependencies.
 - Run training locally using `uv run python -m plora_cl.cli.train --config experiments/<task>/config.yaml` once the CLI module lands.
 - Execute fast checks with `uv run pytest tests -q`; before merging run `uv run pytest --maxfail=1 --disable-warnings --cov=plora_cl`.
 
@@ -33,3 +33,7 @@
 ## Research Assets & Data Handling
 - Record dataset provenance and preprocessing steps in `docs/` or experiment READMEs.
 - Store credentials and API keys in environment variables, documenting required names in `.env.example`.
+
+## Other Guidelines
+- Only create change summaries or other documents if they are explicitly requested by the project owner.
+- Dont ever use emojis anywhere.
