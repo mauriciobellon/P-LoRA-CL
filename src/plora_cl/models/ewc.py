@@ -161,7 +161,7 @@ class EWC:
 
     def load_checkpoint(self, path: str):
         """Load EWC state from checkpoint."""
-        checkpoint = torch.load(path)
+        checkpoint = torch.load(path, weights_only=False)
         self.fisher_info = checkpoint["fisher_info"]
         self.optimal_params = checkpoint["optimal_params"]
         self.lambda_ewc = checkpoint.get("lambda_ewc", self.lambda_ewc)

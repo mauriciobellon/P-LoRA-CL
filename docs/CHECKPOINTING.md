@@ -161,6 +161,10 @@ if latest:
 
 ## Considerações
 
+### Segurança
+
+Os checkpoints usam `torch.load(..., weights_only=False)` para permitir o carregamento de objetos NumPy (matrizes de métricas). **Apenas carregue checkpoints de fontes confiáveis** que você mesmo criou.
+
 ### Determinismo
 
 O sistema salva e restaura a seed usada, mas note que:

@@ -257,7 +257,7 @@ class CLTrainer:
             checkpoint_path: Path to checkpoint file
         """
         print(f"Loading checkpoint from {checkpoint_path}...", flush=True)
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
         
         # Restore training state
         self.global_step = checkpoint["global_step"]
