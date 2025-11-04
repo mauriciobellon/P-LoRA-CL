@@ -112,9 +112,44 @@ class OrthogonalLoRA(LoRAAdapterManager):
         weights = {}
         for name, module in adapter.named_modules():
             if hasattr(module, "lora_A") and hasattr(module, "lora_B"):
+                # Handle both old and new PEFT structures
+                # In newer PEFT versions, lora_A/lora_B are ModuleDict objects
+                lora_A = module.lora_A
+                lora_B = module.lora_B
+
+                # If it's a ModuleDict, get the 'default' adapter
+                if isinstance(lora_A, nn.ModuleDict):
+                    if "default" in lora_A:
+                        lora_A = lora_A["default"]
+                    else:
+                        # Get the first adapter
+                        lora_A = next(iter(lora_A.values()))
+
+                if isinstance(lora_B, nn.ModuleDict):
+                    if "default" in lora_B:
+                        lora_B = lora_B["default"]
+                    else:
+                        # Get the first adapter
+                        lora_B = next(iter(lora_B.values()))
+
+                # Now extract the actual weight
+                if hasattr(lora_A, "weight"):
+                    lora_A_weight = lora_A.weight.data
+                elif isinstance(lora_A, torch.Tensor):
+                    lora_A_weight = lora_A
+                else:
+                    continue
+
+                if hasattr(lora_B, "weight"):
+                    lora_B_weight = lora_B.weight.data
+                elif isinstance(lora_B, torch.Tensor):
+                    lora_B_weight = lora_B
+                else:
+                    continue
+
                 weights[name] = {
-                    "lora_A": module.lora_A.weight.data,
-                    "lora_B": module.lora_B.weight.data,
+                    "lora_A": lora_A_weight,
+                    "lora_B": lora_B_weight,
                 }
         return weights
 
