@@ -201,7 +201,7 @@ class CLTrainer:
         # Add task head parameters
         if task_name in self.base_model.task_heads:
             trainable_params.extend(list(self.base_model.task_heads[task_name].parameters()))
-        
+
         num_trainable = sum(p.numel() for p in trainable_params)
         print(f"Total trainable parameters: {num_trainable:,}", flush=True)
 
@@ -246,7 +246,7 @@ class CLTrainer:
             for batch_idx, batch in enumerate(train_loader):
                 if batch_idx % 10 == 0:
                     print(f"  Batch {batch_idx}/{len(train_loader)}", end='\r', flush=True)
-                
+
                 # Move batch to device
                 input_ids = batch["input_ids"].to(self.device)
                 attention_mask = batch["attention_mask"].to(self.device)
@@ -331,7 +331,8 @@ class CLTrainer:
         # Compute Fisher for EWC after training
         if self.use_ewc:
             print("Computing Fisher information matrix...", flush=True)
-            self.ewc.compute_fisher(train_loader, task_name, str(self.device))
+            task_head = self.base_model.task_heads[task_name]
+            self.ewc.compute_fisher(train_loader, task_name, str(self.device), task_head)
             print("Fisher computation complete!", flush=True)
 
         # Mark task as trained

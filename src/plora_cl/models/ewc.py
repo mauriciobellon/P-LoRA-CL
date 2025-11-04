@@ -44,6 +44,7 @@ class EWC:
         dataloader,
         task_name: str,
         device: str = "cpu",
+        task_head: Optional[nn.Module] = None,
     ):
         """
         Compute Fisher information matrix for a task.
@@ -52,6 +53,7 @@ class EWC:
             dataloader: DataLoader for the task
             task_name: Name of the task
             device: Device to use
+            task_head: Optional task-specific classification head
         """
         self.model.eval()
         fisher = {}
@@ -66,19 +68,30 @@ class EWC:
         for batch in dataloader:
             # Move batch to device
             if isinstance(batch, dict):
-                batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+                input_ids = batch["input_ids"].to(device)
+                attention_mask = batch["attention_mask"].to(device)
+                labels = batch["labels"].to(device)
             else:
-                batch = [item.to(device) if isinstance(item, torch.Tensor) else item for item in batch]
+                raise ValueError("Expected batch to be a dictionary")
 
             self.model.zero_grad()
 
-            # Forward pass
-            if isinstance(batch, dict):
-                outputs = self.model(**batch)
-            else:
-                outputs = self.model(*batch)
+            # Forward pass through base model
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+            )
 
-            loss = outputs.loss if hasattr(outputs, "loss") else outputs[0]
+            # Get pooled output and compute logits
+            if task_head is not None:
+                pooled_output = outputs.last_hidden_state[:, 0]
+                logits = task_head(pooled_output)
+
+                # Compute cross-entropy loss
+                loss = nn.functional.cross_entropy(logits, labels)
+            else:
+                # Fallback: try to get loss from outputs
+                loss = outputs.loss if hasattr(outputs, "loss") else outputs[0]
 
             # Backward pass
             loss.backward()
@@ -154,5 +167,3 @@ class EWC:
         self.lambda_ewc = checkpoint.get("lambda_ewc", self.lambda_ewc)
         self.online = checkpoint.get("online", self.online)
         self.decay_factor = checkpoint.get("decay_factor", self.decay_factor)
-
-
