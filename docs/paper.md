@@ -130,7 +130,17 @@ O guia também discute trade-offs explícitos entre diferentes escolhas de proje
 
 #### 1.5.4. Contribuição de artefatos
 
-O trabalho disponibiliza código-fonte, configurações e scripts reusáveis que permitem reprodução e extensão por outros pesquisadores. Os artefatos incluem implementações dos componentes principais (adaptadores O-LoRA, integração EWC, replay gerativo), pipelines de experimentação, e ferramentas de análise de resultados. A disponibilização desses artefatos aumenta o impacto do trabalho e facilita avanços futuros na área.
+O trabalho disponibiliza código-fonte completo, configurações e ferramentas reusáveis que permitem reprodução e extensão por outros pesquisadores. Os artefatos incluem:
+
+- **Implementações dos componentes principais**: adaptadores O-LoRA com gerenciamento de múltiplos PeftModels, integração EWC com cálculo de matriz de Fisher, estrutura para replay gerativo (geração a ser implementada), e logging extensivo de métricas.
+
+- **Pipeline de experimentação modular**: Interface CLI (`uv run python -m plora_cl.cli.train`) com configuração via arquivos YAML ou argumentos, suporte a ablações (flags `use_ewc`, `use_orthogonal`, `use_replay`, `use_lateral`), e tracking automático de métricas (ACC, BWT, FWT, Forgetting).
+
+- **Ferramentas de análise**: Scripts de visualização (`uv run python -m plora_cl.cli.visualize`) para geração de gráficos de evolução de acurácia, comparação de métodos, estudos de ablação, e tabelas LaTeX para inclusão direta no paper.
+
+- **Estrutura extensível**: Código organizado seguindo boas práticas Python (PEP 518/621, pyproject.toml), compatível com diferentes arquiteturas de transformers (detecção automática de módulos), e preparado para escalar para modelos maiores sem refatoração.
+
+A disponibilização desses artefatos aumenta o impacto do trabalho, facilita validação por pares, e acelera avanços futuros na área de aprendizado contínuo em PLN.
 
 ### 1.6. Estrutura do trabalho
 
@@ -148,7 +158,7 @@ Finalmente, o Capítulo 5 sintetiza os principais achados, discute as contribui�
 
 ## 2. Referencial Teórico
 
-### 2.1. Fundamentação teórica sobre aprendizado contínuo em PLN
+### 2.1. Aprendizado contínuo em PLN
 
 #### 2.1.1. Definição e desafios do aprendizado contínuo
 
@@ -450,11 +460,13 @@ Outra lacuna diz respeito à alocação proativa de subespaços para adapters ao
 
 A arquitetura proposta utiliza modelos base de porte moderado para garantir viabilidade computacional com recursos limitados. Especificamente, empregamos BERT-base (110M parâmetros) ou DistilBERT (66M parâmetros) como modelos base pré-treinados (Devlin et al., 2019; Sanh et al., 2019). Esses modelos oferecem um bom equilíbrio entre capacidade de representação e eficiência computacional, sendo amplamente utilizados em benchmarks de aprendizado contínuo.
 
-O modelo base é mantido majoritariamente congelado durante todo o processo de aprendizado contínuo, com apenas componentes específicos sendo parcialmente destravados para aplicação de EWC. A cabeça de classificação padrão (um classificador linear sobre a representação [CLS]) é mantida genérica e pode ser adaptada por tarefa através dos adaptadores LoRA (Hu et al., 2021). Esta configuração permite que o modelo compartilhe conhecimento linguístico fundamental enquanto especializa-se para tarefas específicas através de módulos leves.
+O modelo base é carregado sem cabeça de classificação pré-construída (usando `AutoModel` da biblioteca Transformers), mantendo apenas o backbone transformer. Este é congelado durante todo o processo de aprendizado contínuo, com exceção dos adaptadores LoRA que são aplicados nas camadas de atenção. A abordagem garante que o conhecimento linguístico fundamental permaneça estável enquanto permitimos especialização por tarefa através dos adaptadores.
 
-Para evitar conflito de rótulos entre tarefas com espaços de classes distintos, utilizamos cabeças de classificação específicas por tarefa no cenário task-aware (3.5.2). Ou seja, a arquitetura da cabeça é compartilhada, mas os pesos do último layer (logits) são instanciados por tarefa. Em setups com tarefas binárias (e.g., sentimento) e multiclasse (e.g., DBPedia), isso impede colisão de rótulos e simplifica a avaliação. Opcionalmente, em ambientes com restrições de memória, um único cabeçote compartilhado pode ser usado com mapeamentos por tarefa, mas adotamos cabeças por tarefa para clareza experimental.
+Para cada tarefa, criamos uma cabeça de classificação linear independente (mapeando a representação [CLS] para o espaço de classes da tarefa) que é treinada juntamente com os adaptadores LoRA da tarefa. Esta arquitetura evita conflitos de rótulos entre tarefas com espaços de classes distintos no cenário task-aware (3.5.2). Em setups com tarefas binárias (e.g., sentimento) e multiclasse (e.g., DBPedia), isso impede colisão de rótulos e simplifica a avaliação.
 
-Quando disponível, avaliamos também uma variação com quantização do backbone (QLoRA; Dettmers et al., 2023), mantendo o backbone congelado em 4/8 bits e treinando apenas adapters em maior precisão. Essa configuração reduz VRAM sem alterar a lógica do arranjo e é especialmente útil em GPUs de 16GB.
+A implementação detecta automaticamente os nomes dos módulos alvo para LoRA com base na arquitetura do modelo (e.g., `q_lin`, `k_lin`, `v_lin`, `out_lin` para DistilBERT; `query`, `key`, `value`, `dense` para BERT padrão), garantindo compatibilidade com diferentes arquiteturas de transformers sem necessidade de configuração manual.
+
+Quando disponível, a arquitetura suporta também quantização do backbone (QLoRA; Dettmers et al., 2023), mantendo o backbone em 4/8 bits e treinando adaptadores em maior precisão, reduzindo uso de VRAM sem alterar a lógica do arranjo.
 
 #### 3.1.2. Estrutura modular inspirada em PNN
 
@@ -466,19 +478,21 @@ Implementação: os adaptadores por tarefa são injetados de forma homogênea no
 
 #### 3.1.3. Adaptadores LoRA por tarefa com restrição ortogonal
 
-Para cada nova tarefa T_k, inicializamos um novo conjunto de adaptadores LoRA que será treinado especificamente para essa tarefa (Hu et al., 2021). Os adaptadores são injetados nas projeções de atenção (Q, K, V, O) e/ou nas camadas feed-forward do modelo base, dependendo da configuração escolhida. Utilizamos ranks reduzidos (r = 4 a 8) para manter a eficiência paramétrica, resultando em overhead típico de 0,1% a 2% dos parâmetros do modelo base por tarefa.
+Para cada nova tarefa T_k, criamos um novo `PeftModel` contendo um conjunto de adaptadores LoRA que será treinado especificamente para essa tarefa (Hu et al., 2021). Cada tarefa recebe seu próprio `PeftModel` completo, garantindo isolamento total entre adaptadores de diferentes tarefas e evitando conflitos ao modificar o modelo base múltiplas vezes. Os adaptadores são injetados nas projeções de atenção (Q, K, V, O) do modelo base, com detecção automática dos módulos alvo baseada na arquitetura. Utilizamos ranks reduzidos (r = 4 a 8) para manter eficiência paramétrica, resultando em overhead típico de 0,1% a 2% dos parâmetros do modelo base por tarefa.
 
-Durante o treinamento dos adaptadores para T_k, impomos restrições ortogonais (O-LoRA) que garantem que os novos adaptadores ocupem subespaços distintos dos adaptadores de tarefas anteriores (T_1, ..., T_{k-1}). Isso é feito através de um termo de regularização na função de perda que penaliza projeções dos novos adaptadores nos subespaços gerados pelos adaptadores anteriores, minimizando interferência entre tarefas (inspirado em OWM/OGD; Zeng et al., 2019; Farajtabar et al., 2019).
+Durante o treinamento dos adaptadores para T_k, impomos restrições ortogonais (O-LoRA) que garantem que os novos adaptadores ocupem subespaços distintos dos adaptadores de tarefas anteriores (T_1, ..., T_{k-1}). Isso é implementado através de um termo de regularização na função de perda que penaliza projeções dos novos adaptadores nos subespaços gerados pelos adaptadores anteriores, minimizando interferência entre tarefas (inspirado em OWM/OGD; Zeng et al., 2019; Farajtabar et al., 2019).
 
-Concretamente, denotando A_k as colunas da base de baixo ranque da tarefa k (e A_<k a união de bases anteriores), adotamos: L_ortho = Σ_i ||Proj_{span(A_<k)}(a_{k,i})||², onde a_{k,i} é uma coluna de A_k. Alternativamente, utilizamos penalização de correlação/cosseno entre direções de A_k e A_<k. Em tarefas com maior conflito, aplicamos projeção tipo Gram–Schmidt após cada atualização para reforçar ortogonalidade. Um agendamento crescente de λ_ortho ao longo das épocas ajuda a preservar plasticidade no início e aumentar isolamento próximo da convergência. Trabalhos recentes investigam alocação proativa de bases com mínima interferência (PLAN; Wang, Zhuang & Zhang, 2025), alinhados com esse princípio.
+Na implementação, armazenamos os `PeftModel` de cada tarefa anterior e, durante o treinamento de T_k, extraímos as matrizes LoRA (A e B) de tarefas anteriores para calcular a perda ortogonal. Concretamente, aproximamos a projeção através de `||A_k @ A_{prev}.T||²` para cada par de adaptadores correspondentes. O peso da regularização ortogonal (λ_ortho, tipicamente 0.1) é configurável e balanceia a preservação de conhecimento anterior com a plasticidade para a nova tarefa.
+
+A arquitetura de gerenciamento de adaptadores (`LoRAAdapterManager` e `OrthogonalLoRA`) mantém um dicionário de modelos PEFT por tarefa, permitindo ativação rápida do adaptador apropriado durante treinamento ou avaliação. Cada adaptador é congelado após o treinamento de sua tarefa, garantindo que tarefas futuras não modifiquem conhecimento adquirido anteriormente.
 
 #### 3.1.4. Conexões laterais opcionais para transferência
 
-Para promover transferência positiva entre tarefas, implementamos conexões laterais opcionais inspiradas em PNN (Rusu et al., 2016). Essas conexões permitem que o módulo atual (adaptadores da tarefa corrente) consuma representações dos módulos anteriores (adaptadores de tarefas passadas) sem atualizá-los. As conexões podem ser implementadas através de concatenação de features, soma ponderada, ou mecanismos de atenção que aprendem a combinar informações de diferentes adaptadores.
+Para promover transferência positiva entre tarefas, a arquitetura prevê conexões laterais opcionais inspiradas em PNN (Rusu et al., 2016). Essas conexões permitiriam que o módulo atual (adaptadores da tarefa corrente) consuma representações dos módulos anteriores (adaptadores de tarefas passadas) sem atualizá-los. As conexões podem ser implementadas através de concatenação de features, soma ponderada, ou mecanismos de atenção que aprendem a combinar informações de diferentes adaptadores.
 
-As conexões laterais são configuráveis e podem ser habilitadas ou desabilitadas para análise de ablação, permitindo quantificar seu impacto na transferência forward e no desempenho geral. Quando habilitadas, elas adicionam um pequeno overhead computacional mas podem melhorar significativamente o desempenho inicial em novas tarefas através de aproveitamento de conhecimento prévio.
+**Nota de implementação:** A flag `use_lateral` está presente na interface do trainer e nos arquivos de configuração, permitindo habilitar ou desabilitar as conexões para análise de ablação. Contudo, a lógica específica das conexões laterais no método `forward` do modelo e no loop de treinamento ainda não foi implementada na versão atual. Esta funcionalidade está planejada como extensão futura para quantificar seu impacto na transferência forward (FWT) e no desempenho geral.
 
-Para evitar transferência negativa, aplicamos normalização e gating aprendível por camada, permitindo ao modelo atenuar contribuições de tarefas pouco relacionadas. Em Transformers, a opção adotada é um bloco de atenção cruzada leve entre a representação corrente e caches de saídas intermediárias de adaptadores antigos. Pesos dessas conexões são treinados apenas para a tarefa corrente, mantendo módulos antigos congelados. Essa escolha preserva o princípio de não interferência direta em tarefas anteriores.
+Quando implementadas, as conexões laterais adicionarão um pequeno overhead computacional mas poderão melhorar significativamente o desempenho inicial em novas tarefas através de aproveitamento de conhecimento prévio. Para evitar transferência negativa, planejamos aplicar normalização e gating aprendível por camada, permitindo ao modelo atenuar contribuições de tarefas pouco relacionadas. Em Transformers, a opção natural seria um bloco de atenção cruzada leve entre a representação corrente e caches de saídas intermediárias de adaptadores antigos, com pesos treinados apenas para a tarefa corrente mantendo módulos antigos congelados.
 
 #### 3.1.5. Aplicação de EWC em componentes compartilhados
 
@@ -490,11 +504,13 @@ Adotamos a aproximação diagonal de Fisher e a variante Online EWC (Schwarz et 
 
 #### 3.1.6. Integração de replay gerativo parcimonioso
 
-O replay gerativo é implementado de forma parcimoniosa para minimizar custo computacional. Utilizamos um modelo gerador leve (que pode ser o próprio modelo base configurado para geração ou um modelo auxiliar) para produzir exemplos sintéticos das tarefas anteriores, seguindo a linha de Deep Generative Replay (Shin et al., 2017). Antes de cada época de treinamento na tarefa atual T_k, geramos um conjunto balanceado de exemplos sintéticos representando as tarefas T_1, ..., T_{k-1}.
+O replay gerativo é implementado de forma parcimoniosa para minimizar custo computacional. A arquitetura utiliza um modelo gerador (que pode ser o próprio modelo base configurado para geração ou um modelo auxiliar) para produzir exemplos sintéticos das tarefas anteriores, seguindo a linha de Deep Generative Replay (Shin et al., 2017). Antes de cada batch de treinamento na tarefa atual T_k, o sistema pode gerar exemplos sintéticos representando as tarefas T_1, ..., T_{k-1}.
 
-Esses exemplos sintéticos são intercalados com os dados reais da tarefa atual durante o treinamento, compondo tipicamente 10-30% de cada batch. A geração é guiada por prompts estruturados que especificam a tarefa e a classe desejada, e os exemplos gerados são validados automaticamente para garantir qualidade mínima antes de serem incorporados ao treinamento.
+A integração no `CLTrainer` está preparada para consumir exemplos sintéticos: durante o loop de treinamento, quando `use_replay=True` e há tarefas anteriores, o trainer chama o `PseudoReplayGenerator` para gerar amostras que são intercaladas com dados reais, compondo tipicamente 10-30% de cada batch (controlado por `replay_ratio`).
 
-Práticas adotadas: (i) quotas por classe/tarefa para manter balanceamento; (ii) filtros automáticos de qualidade (comprimento mínimo, vocabulário permitido, score de um classificador estável); (iii) cache das gerações por época para reuso em múltiplos batches; (iv) hiperparâmetros de decodificação (temperature 0.7–1.0, top-p 0.9) calibrados em validação. Quando há risco de deriva (degradação das amostras ao longo do tempo), congelamos o gerador ou utilizamos um gerador dedicado para estabilizar a distribuição, à semelhança do LAMOL (Sun et al., 2020).
+**Nota de implementação:** A classe `PseudoReplayGenerator` está implementada com a estrutura completa de integração, mas o método `generate_samples` que produz o texto sintético é atualmente um placeholder. A lógica de geração usando o modelo em modo generativo (com prompts estruturados especificando tarefa e classe) precisa ser implementada para ativar completamente esta funcionalidade.
+
+Quando completamente implementado, o sistema adotará: (i) quotas por classe/tarefa para manter balanceamento; (ii) filtros de qualidade mínima; (iii) hiperparâmetros de decodificação (temperature 0.7–1.0, top-p 0.9) calibrados; (iv) opção de congelar ou usar gerador dedicado para estabilizar distribuição, à semelhança do LAMOL (Sun et al., 2020). A arquitetura permite fácil extensão quando a geração for implementada, sem necessidade de refatoração do loop de treinamento.
 
 ### 3.2. Protocolo experimental
 
@@ -608,17 +624,21 @@ Scheduler de LR: linear com warmup de 6–10% dos steps; gradiente clipping (p. 
 
 A implementação utiliza PyTorch como framework principal de deep learning, aproveitando sua flexibilidade para implementar componentes customizados. HuggingFace Transformers fornece modelos base pré-treinados e utilitários de tokenização, enquanto PEFT (Parameter-Efficient Fine-Tuning) oferece implementações otimizadas de LoRA e gerenciamento de adaptadores.
 
-Avalanche (ContinualAI) é utilizado para o protocolo de aprendizado contínuo, gerenciamento de sequências de tarefas, e implementação de EWC. O framework também fornece utilitários para avaliação cumulativa e cálculo de métricas padronizadas de CL. Componentes customizados são desenvolvidos para integração de O-LoRA, replay gerativo, e conexões laterais.
+A implementação customizada não utiliza Avalanche, optando por uma arquitetura própria mais leve e especializada para os requisitos específicos do trabalho. O gerenciamento de sequências de tarefas é implementado em `src/plora_cl/data/datasets.py`, as métricas de continual learning em `src/plora_cl/evaluation/metrics.py`, e o loop de treinamento em `src/plora_cl/training/trainer.py`. EWC é implementado diretamente em `src/plora_cl/models/ewc.py` com cálculo customizado da matriz de Fisher. Componentes adicionais incluem O-LoRA (`orthogonal_lora.py`), estrutura de replay gerativo (`replay.py`), e sistema de tracking de experimentos (`evaluation/tracker.py`).
 
-Versões e reprodutibilidade: utilizamos versões estáveis de PyTorch e Transformers (Wolf et al., 2020), e a biblioteca Avalanche (Lomonaco et al., 2021). Fixamos seeds de PyTorch/NumPy/Python e habilitamos, quando viável, flags determinísticas. Scripts de execução registram hashes de commit e versões de dependências para reprodutibilidade.
+A implementação inclui logging extensivo com saída em tempo real (`flush=True`), permitindo monitoramento detalhado do progresso durante treinamento, especialmente útil para experimentos longos em CPU. O sistema registra configuração inicial, progresso por tarefa/época/batch, métricas de loss, tempo de treinamento e uso de VRAM.
+
+Versões e reprodutibilidade: utilizamos versões estáveis de PyTorch (≥2.0.0) e Transformers (≥4.30.0). Fixamos seeds de PyTorch/NumPy/Python via configuração no trainer. Scripts de execução via CLI (`uv run python -m plora_cl.cli.train`) registram todas as configurações em arquivos JSON, permitindo reprodução exata dos experimentos. Gerenciamento de dependências via `pyproject.toml` (PEP 518/621) com `uv` para ambientes reprodutíveis.
 
 #### 3.4.2. Configuração de hardware
 
-Os experimentos são projetados para execução em uma única GPU intermediária (por exemplo, NVIDIA T4 com 16GB VRAM), garantindo viabilidade para contextos acadêmicos com recursos limitados. Utilizamos precisão mista (mixed precision) através de torch.cuda.amp para reduzir uso de memória e acelerar treinamento, permitindo batch sizes maiores e reduzindo tempo de treinamento.
+Os experimentos são projetados para execução tanto em CPU quanto em GPU, garantindo acessibilidade máxima. O sistema suporta execução em CPU (validado durante desenvolvimento), GPU única intermediária (por exemplo, NVIDIA T4 com 16GB VRAM), ou detecção automática via flag `--device auto`.
 
-Gradiente checkpointing é aplicado quando necessário para modelos maiores, trocando computação por memória e permitindo processar sequências mais longas ou batches maiores dentro das limitações de VRAM disponível.
+A implementação atual foca em compatibilidade e correção, validada primeiramente em CPU. Otimizações para GPU incluem suporte futuro a precisão mista (mixed precision) através de `torch.cuda.amp` para reduzir uso de memória e acelerar treinamento, permitindo batch sizes maiores.
 
-Quando aplicável, empregamos QLoRA para quantizar o backbone e reduzir VRAM mantendo adapters em maior precisão (Dettmers et al., 2023). Mixed precision segue práticas de Micikevicius et al. (2018), com escalonamento de perda automático e monitoração de under/overflow. Reportamos picos de VRAM e tempos por tarefa (3.5.5).
+Gradiente checkpointing pode ser aplicado quando necessário para modelos maiores, trocando computação por memória e permitindo processar sequências mais longas ou batches maiores dentro das limitações de VRAM disponível. QLoRA está planejado para quantizar o backbone e reduzir VRAM mantendo adapters em maior precisão (Dettmers et al., 2023).
+
+O sistema reporta automaticamente picos de VRAM (quando disponível) e tempos de treinamento por tarefa através do `ExperimentTracker` (3.5.5). Durante treinamento, o progresso é monitorado em tempo real com informações de epoch, batch, e métricas de loss.
 
 #### 3.4.3. Acúmulo de gradiente e otimização de memória
 
@@ -712,6 +732,8 @@ Como upper bound teórico, treinamos o modelo simultaneamente em todas as tarefa
 A diferença entre joint training e os métodos de aprendizado contínuo quantifica o custo de aprender sequencialmente versus simultaneamente, e permite avaliar quão próximos os métodos propostos estão do limite teórico.
 
 Configuração: mistura balanceada de todas as tarefas, com splits originais e sem restrições de memória/dados. Usamos os mesmos hiperparâmetros globais e treinamos até convergência em validação global. Este resultado não é comparável diretamente em termos de custo, mas serve como referência de desempenho máximo.
+
+**Nota de implementação:** A classe `JointTrainingTrainer` em `src/plora_cl/training/baselines.py` está implementada como estrutura básica que carrega todos os datasets. A lógica completa de mistura balanceada de batches e treinamento conjunto está planejada para implementação futura. A arquitetura permite fácil extensão sem necessidade de modificação do framework principal.
 
 #### 3.6.4. Ablações seletivas
 
@@ -1148,41 +1170,762 @@ Plano de ablações:
 
 ### Apêndice E: Instruções de reprodução dos experimentos
 
-Pré-requisitos
+#### Pré-requisitos
 - Python 3.11 com `uv` instalado
-- GPU com 16GB VRAM (recomendado) e drivers atualizados
+- CPU (funcional) ou GPU com 16GB VRAM (recomendado)
 
-Ambiente
-- `uv python install 3.11`
-- `uv venv && source .venv/bin/activate`
-- `uv pip install -r requirements.txt`
+#### Instalação
 
-Formatação e lint
-- `ruff format` e `ruff check src tests` (aplicar fixes quando indicado)
+```bash
+## Instalar ambiente
+./install
 
-Testes rápidos
-- `uv run pytest tests -q`
+## Ou manualmente:
+uv python install 3.11
+uv venv
+uv pip install -e .
 
-Execução (placeholder; CLI a ser integrada)
-- `uv run python -m plora_cl.cli.train --config experiments/<tarefa>/config.yaml`
+## Com dependências de desenvolvimento:
+uv pip install -e ".[dev]"
+```
 
-Protocolos
-- Registrar seeds, commits e hashes de datasets
-- Gerar tabelas (ACC, BWT, FWT, Forgetting) após cada tarefa
-- Salvar métricas e artefatos leves em `artifacts/` (checkpoints grandes: armazenamento externo)
+#### Formatação e lint
+
+```bash
+uv run ruff format src tests
+uv run ruff check src tests
+```
+
+#### Testes
+
+```bash
+## Testes rápidos
+uv run pytest tests -q
+
+## Com coverage
+uv run pytest --cov=plora_cl tests
+```
+
+#### Execução de Experimentos
+
+**Baseline completo:**
+```bash
+uv run python -m plora_cl.cli.train --experiment-name baseline
+```
+
+**Com configuração customizada:**
+```bash
+uv run python -m plora_cl.cli.train \
+  --config experiments/meu_experimento/config.yaml \
+  --experiment-name meu_experimento
+```
+
+**Ablação (exemplo - sem O-LoRA):**
+```bash
+uv run python -m plora_cl.cli.train \
+  --experiment-name ablation_no_olora \
+  --use-orthogonal false
+```
+
+#### Visualização
+
+```bash
+uv run python -m plora_cl.cli.visualize \
+  --experiment-name baseline \
+  --output-dir plots/baseline/
+```
+
+#### Protocolos
+- Registrar seeds (via `--seed`), commits git e versões de bibliotecas
+- Resultados salvos automaticamente em `experiments/<nome>/results/`
+- Métricas (ACC, BWT, FWT, Forgetting) calculadas após cada tarefa
+- Checkpoints grandes: considerar armazenamento externo (config via flag)
 
 ---
 
 ## 8. Anexos
 
 ### Anexo A: Código-fonte principal
-[A preencher]
 
-### Anexo B: Scripts de experimentos
-[A preencher]
+O código-fonte está organizado em `src/plora_cl/` com os seguintes módulos:
 
-### Anexo C: Configurações YAML
-[A preencher]
+- **`cli/`**: Interface de linha de comando
+  - `train.py`: Comando de treinamento
+  - `visualize.py`: Geração de gráficos e tabelas
+- **`models/`**: Arquiteturas e componentes
+  - `base_model.py`: Modelo base com cabeças por tarefa
+  - `lora_adapters.py`: Gerenciamento de adaptadores LoRA
+  - `orthogonal_lora.py`: O-LoRA com restrições ortogonais
+  - `ewc.py`: Elastic Weight Consolidation
+- **`training/`**: Loop de treinamento
+  - `trainer.py`: Treinador sequencial principal
+  - `baselines.py`: Implementações de baselines
+  - `loss.py`: Funções de perda compostas
+  - `replay.py`: Geração de replay sintético
+- **`data/`**: Carregamento de dados
+  - `datasets.py`: Configurações de tarefas (AG News, Yelp, Amazon, DBPedia, Yahoo)
+  - `preprocessing.py`: Tokenização e preparação
+- **`evaluation/`**: Métricas e tracking
+  - `metrics.py`: ACC, BWT, FWT, Forgetting
+  - `tracker.py`: Salvamento de resultados
 
-### Anexo D: Logs de treinamento (amostras)
-[A preencher]
+### Anexo B: Configurações de Experimentos
+
+As configurações são armazenadas em arquivos YAML (exemplo em `experiments/config.yaml.example`):
+
+```yaml
+model_name: "distilbert-base-uncased"
+device: "auto"  # ou "cpu", "cuda"
+seed: 42
+
+## Treinamento
+batch_size: 32
+learning_rate: 1e-4
+epochs: 3
+
+## LoRA
+lora_r: 8
+lora_alpha: 16
+
+## Regularização
+lambda_ortho: 0.1
+lambda_ewc: 100.0
+replay_ratio: 0.2
+
+## Componentes
+use_ewc: true
+use_orthogonal: true
+use_replay: true
+use_lateral: false
+```
+
+### Anexo C: Execução de Experimentos
+
+**Comando básico:**
+```bash
+uv run python -m plora_cl.cli.train --experiment-name baseline
+```
+
+**Com arquivo de configuração:**
+```bash
+uv run python -m plora_cl.cli.train --config experiments/meu_experimento/config.yaml
+```
+
+**Visualização de resultados:**
+```bash
+uv run python -m plora_cl.cli.visualize \
+  --experiment-name baseline \
+  --output-dir plots/
+```
+
+### Anexo D: Estrutura de Resultados
+
+Os experimentos salvam automaticamente em `experiments/<nome>/`:
+
+- **`config.json`**: Configuração completa do experimento
+- **`logs/`**: Logs de treinamento por época
+- **`results/`**: Métricas finais (ACC, BWT, FWT, Forgetting)
+- **`checkpoints/`**: Estados dos adaptadores por tarefa (opcional)
+
+---
+
+## 9. Lista de Abreviações
+
+## 9. Lista de Abreviações e Siglas
+
+### Abreviações e Siglas
+
+#### Técnicas e Métodos de Aprendizado Contínuo
+
+- ACC: Average Accuracy (Acurácia Média)
+- A-GEM: Averaged Gradient Episodic Memory
+- BWT: Backward Transfer (Transferência Reversa)
+- CL: Continual Learning (Aprendizado Contínuo)
+- EWC: Elastic Weight Consolidation (Consolidação Elástica de Pesos)
+- FWT: Forward Transfer (Transferência Progressiva)
+- GEM: Gradient Episodic Memory
+- HAT: Hard Attention to the Task
+- LAMOL: Language Modeling for Lifelong Learning
+- MAS: Memory Aware Synapses
+- OGD: Orthogonal Gradient Descent
+- OWM: Orthogonal Weight Modification
+- SI: Synaptic Intelligence
+
+#### Adaptação de Parâmetros
+
+- LoRA: Low-Rank Adaptation (Adaptação de Baixo Ranque)
+- O-LoRA: Orthogonal Low-Rank Adaptation (LoRA Ortogonal)
+- PEFT: Parameter-Efficient Fine-Tuning
+- QLoRA: Quantized Low-Rank Adaptation
+
+#### Modelos e Arquiteturas
+
+- BERT: Bidirectional Encoder Representations from Transformers
+- DistilBERT: Distilled BERT
+- GPT: Generative Pre-trained Transformer
+- PNN: Progressive Neural Networks (Redes Neurais Progressivas)
+
+#### Processamento de Linguagem Natural
+
+- NLP: Natural Language Processing
+- PLN: Processamento de Linguagem Natural
+
+#### Tecnologias e Infraestrutura
+
+- CLI: Command Line Interface
+- CPU: Central Processing Unit
+- GPU: Graphics Processing Unit
+- JSON: JavaScript Object Notation
+- PEP: Python Enhancement Proposal
+- SVD: Singular Value Decomposition
+- VRAM: Video Random Access Memory
+- YAML: YAML Ain't Markup Language
+
+#### Otimização
+
+- AdamW: Adam with Weight Decay
+- LR: Learning Rate (Taxa de Aprendizado)
+
+#### Outros
+
+- GDPR: General Data Protection Regulation
+- T4: NVIDIA Tesla T4 (modelo de GPU)
+
+---
+
+## 10. Lista de Ilustrações
+
+### Figuras
+
+#### Capítulo 1: Introdução
+
+**Figura 1.1: Dilema Estabilidade-Plasticidade no Aprendizado Contínuo**
+- Localização: Seção 1.1.4
+- Tipo: Diagrama conceitual
+- Fonte: Criar (diagrama ilustrativo)
+- Descrição: Diagrama mostrando o trade-off entre estabilidade (preservar conhecimento antigo) e plasticidade (aprender novo conhecimento), com eixos representando cada dimensão e uma zona ótima de equilíbrio. Ilustrar como diferentes métodos (fine-tuning puro, congelamento completo, abordagem híbrida) se posicionam nesse espaço.
+
+**Figura 1.2: Sequência de Tarefas e Esquecimento Catastrófico**
+- Localização: Seção 1.1.2
+- Tipo: Gráfico de linha
+- Fonte: Criar (exemplo ilustrativo)
+- Descrição: Gráfico mostrando a evolução da acurácia em três tarefas ao longo do tempo, demonstrando como o desempenho nas tarefas anteriores degrada quando novas tarefas são aprendidas sem mecanismos de proteção.
+
+#### Capítulo 2: Referencial Teórico
+
+**Figura 2.1: Arquitetura de Redes Neurais Progressivas (PNN)**
+- Localização: Seção 2.2.1
+- Tipo: Diagrama de arquitetura
+- Fonte: Adaptar de Rusu et al. (2016)
+- Descrição: Diagrama ilustrando a estrutura de PNN com múltiplas colunas (uma por tarefa), mostrando como cada nova tarefa adiciona uma coluna que recebe conexões laterais das colunas anteriores (congeladas).
+
+**Figura 2.2: Decomposição LoRA de Baixo Ranque**
+- Localização: Seção 2.3.2
+- Tipo: Diagrama matemático
+- Fonte: Adaptar de Hu et al. (2021)
+- Descrição: Ilustração visual mostrando como uma matriz de peso W é mantida congelada e uma atualização de baixo ranque ΔW = AB é adicionada, com dimensões d×d para W, d×r para A, e r×d para B, destacando que r << d.
+
+**Figura 2.3: Ortogonalidade entre Adaptadores LoRA**
+- Localização: Seção 2.3.4
+- Tipo: Diagrama geométrico
+- Fonte: Criar (diagrama ilustrativo)
+- Descrição: Representação geométrica mostrando subespaços ortogonais no espaço de parâmetros, com vetores representando direções de atualização de diferentes tarefas (T1, T2, T3) em ângulos aproximadamente perpendiculares, ilustrando o conceito de minimização de interferência.
+
+**Figura 2.4: Elastic Weight Consolidation (EWC)**
+- Localização: Seção 2.4.1
+- Tipo: Diagrama conceitual
+- Fonte: Adaptar de Kirkpatrick et al. (2017)
+- Descrição: Visualização do landscape de perda mostrando como EWC adiciona "molas" (penalizações quadráticas) ancoradas nos valores ótimos da tarefa anterior, restringindo o movimento dos parâmetros importantes enquanto permite liberdade nos parâmetros menos críticos.
+
+**Figura 2.5: Replay Gerativo no Aprendizado Contínuo**
+- Localização: Seção 2.5.1
+- Tipo: Diagrama de fluxo
+- Fonte: Adaptar de Shin et al. (2017)
+- Descrição: Fluxograma ilustrando o processo de replay gerativo: gerador produz exemplos sintéticos de tarefas anteriores → exemplos são intercalados com dados reais da tarefa atual → modelo é treinado na mistura → ciclo se repete para novas tarefas.
+
+**Figura 2.6: Taxonomia de Métodos de Aprendizado Contínuo**
+- Localização: Seção 2.1.1
+- Tipo: Diagrama taxonômico
+- Fonte: Adaptar de De Lange et al. (2021)
+- Descrição: Árvore hierárquica classificando métodos de aprendizado contínuo em três famílias principais: (1) Baseados em Regularização (EWC, MAS, SI), (2) Baseados em Arquitetura (PNN, HAT, PackNet), (3) Baseados em Replay (GEM, A-GEM, gerativo), destacando onde a proposta híbrida se posiciona.
+
+#### Capítulo 3: Metodologia
+
+**Figura 3.1: Arquitetura Híbrida Proposta**
+- Localização: Seção 3.1
+- Tipo: Diagrama de arquitetura
+- Fonte: Gerar (visualize.py ou criar)
+- Descrição: Diagrama completo da arquitetura integrando: (a) modelo base congelado, (b) adaptadores O-LoRA por tarefa, (c) aplicação de EWC em componentes compartilhados, (d) fluxo de replay gerativo, (e) conexões laterais opcionais. Usar cores diferentes para componentes congelados vs. treináveis.
+
+**Figura 3.2: Fluxo de Treinamento Sequencial**
+- Localização: Seção 3.3
+- Tipo: Fluxograma
+- Fonte: Criar (diagrama de processo)
+- Descrição: Fluxograma detalhado do processo de treinamento sequencial mostrando: inicialização de adaptadores → treinamento com perda composta (L_task + L_ortho + L_ewc) → estimação de Fisher → avaliação cumulativa → próxima tarefa.
+
+**Figura 3.3: Composição da Função de Perda**
+- Localização: Seção 3.3.5
+- Tipo: Diagrama de equação
+- Fonte: Criar (visualização matemática)
+- Descrição: Representação visual da função de perda composta L_total = L_task + λ_ortho·L_ortho + λ_ewc·L_ewc, mostrando cada componente e seus pesos relativos, com exemplos de valores típicos dos hiperparâmetros.
+
+**Figura 3.4: Sequência de Tarefas Experimentais**
+- Localização: Seção 3.2.1
+- Tipo: Linha do tempo
+- Fonte: Criar (diagrama ilustrativo)
+- Descrição: Linha do tempo horizontal mostrando a sequência de cinco tarefas (AG News → Yelp Polarity → Amazon Reviews → DBPedia → Yahoo Answers) com características principais de cada dataset (domínio, número de classes, tamanho).
+
+**Figura 3.5: Protocolo de Avaliação Cumulativa**
+- Localização: Seção 3.5.1
+- Tipo: Diagrama de matriz
+- Fonte: Criar (diagrama ilustrativo)
+- Descrição: Representação visual da matriz de desempenho R_{i,j}, mostrando como após cada tarefa i, o modelo é avaliado em todas as tarefas j≤i, com células coloridas indicando momentos de avaliação.
+
+#### Capítulo 4: Resultados e Discussão
+
+**Figura 4.1: Evolução da Acurácia por Tarefa**
+- Localização: Seção 4.1.1
+- Tipo: Gráfico de linha (múltiplas séries)
+- Fonte: Gerar com visualize.py (plot_accuracy_evolution)
+- Descrição: Gráfico mostrando a evolução da acurácia de cada tarefa ao longo da sequência de treinamento. Eixo X = tarefa de treinamento atual, Eixo Y = acurácia, uma linha por tarefa avaliada. Permite visualizar quando e quanto cada tarefa sofre esquecimento.
+
+**Figura 4.2: Comparação de Métodos - Métricas Agregadas**
+- Localização: Seção 4.1.5
+- Tipo: Gráfico de barras agrupadas
+- Fonte: Gerar com visualize.py (plot_metrics_comparison)
+- Descrição: Quatro subplots (ACC, BWT, FWT, Forgetting) comparando fine-tuning sequencial, LoRA sequencial, proposta híbrida, e joint training (upper bound). Barras coloridas por método.
+
+**Figura 4.3: Matriz de Acurácia Final**
+- Localização: Seção 4.1.2
+- Tipo: Heatmap
+- Fonte: Gerar com visualize.py (base nos dados da accuracy_matrix)
+- Descrição: Heatmap da matriz R_{i,j} mostrando acurácia da tarefa j após treinar tarefa i. Diagonal principal mostra desempenho imediatamente após treinamento; última linha mostra desempenho final. Escala de cores indica magnitude da acurácia.
+
+**Figura 4.4: Taxa de Esquecimento por Tarefa**
+- Localização: Seção 4.1.3
+- Tipo: Gráfico de barras
+- Fonte: Gerar com visualize.py (baseado em forgetting metric)
+- Descrição: Barras mostrando a taxa de esquecimento (A_max - A_final) para cada tarefa, comparando baseline vs. proposta. Barras negativas (ou ausentes) indicam ausência de esquecimento.
+
+**Figura 4.5: Transferência Forward e Backward**
+- Localização: Seção 4.1.4
+- Tipo: Gráfico de barras duplas
+- Fonte: Gerar com visualize.py (BWT e FWT)
+- Descrição: Gráfico comparando BWT (transferência reversa) e FWT (transferência progressiva) entre diferentes métodos. BWT negativo indica esquecimento; FWT positivo indica transferência benéfica.
+
+**Figura 4.6: Estudo de Ablação - Contribuição de Componentes**
+- Localização: Seção 4.3.1
+- Tipo: Gráfico de barras agrupadas
+- Fonte: Gerar com visualize.py (plot_ablation)
+- Descrição: Comparação de configurações ablacionadas: (a) Full (todos componentes), (b) Sem O-LoRA, (c) Sem EWC, (d) Sem Replay, (e) Sem Lateral. Métricas: ACC, BWT, FWT, Forgetting.
+
+**Figura 4.7: Crescimento Paramétrico por Tarefa**
+- Localização: Seção 4.2.1
+- Tipo: Gráfico de linha/área empilhada
+- Fonte: Gerar com visualize.py (dados de custos)
+- Descrição: Gráfico mostrando crescimento cumulativo de parâmetros adicionais ao longo das tarefas. Comparar PNN completa (crescimento ~100% por tarefa) vs. LoRA/O-LoRA (crescimento ~1-2% por tarefa) vs. EWC (crescimento ~0% em parâmetros do modelo).
+
+**Figura 4.8: Tempo de Treinamento e Uso de Memória**
+- Localização: Seção 4.2.2
+- Tipo: Gráfico de barras duplas
+- Fonte: Gerar com visualize.py (dados de custos)
+- Descrição: Dois subplots: (a) tempo de treinamento por tarefa para diferentes métodos, (b) pico de VRAM por método. Mostrar overhead de replay gerativo vs. métodos sem replay.
+
+**Figura 4.9: Impacto do Replay Gerativo na Retenção**
+- Localização: Seção 4.3.4
+- Tipo: Gráfico de linha
+- Fonte: Gerar com visualize.py (ablação de replay)
+- Descrição: Comparação da acurácia final em cada tarefa com e sem replay gerativo, mostrando quanto o replay ajuda a preservar cada tarefa específica. Destacar tarefas que mais se beneficiam.
+
+**Figura 4.10: Trade-off Estabilidade-Plasticidade na Prática**
+- Localização: Seção 4.4.2
+- Tipo: Scatter plot
+- Fonte: Gerar com visualize.py (dados experimentais)
+- Descrição: Scatter plot com ACC (plasticidade) no eixo X e -Forgetting (estabilidade) no eixo Y. Cada ponto representa uma configuração de hiperparâmetros. Mostrar como diferentes valores de λ_ewc e λ_ortho afetam o trade-off.
+
+### Tabelas
+
+#### Capítulo 3: Metodologia
+
+**Tabela 3.1: Características dos Datasets**
+- Localização: Seção 3.2.1
+- Tipo: Tabela descritiva
+- Fonte: Dados dos datasets
+- Descrição: Tabela com colunas: Dataset, Domínio, Número de Classes, Tamanho de Treino, Tamanho de Teste, Comprimento Médio de Texto. Linhas para AG News, Yelp, Amazon, DBPedia, Yahoo.
+
+**Tabela 3.2: Hiperparâmetros Principais**
+- Localização: Seção 3.3.6
+- Tipo: Tabela de configuração
+- Fonte: Configurações experimentais
+- Descrição: Tabela listando hiperparâmetros principais: learning rate, batch size, LoRA rank (r), LoRA alpha, λ_ortho, λ_ewc, replay_ratio, epochs, warmup, weight decay, etc.
+
+**Tabela 3.3: Configurações de Ablação**
+- Localização: Seção 3.6.4
+- Tipo: Tabela de configuração
+- Fonte: Setup experimental
+- Descrição: Matriz mostrando quais componentes estão ativos em cada configuração ablacionada: Full, -O-LoRA, -EWC, -Replay, -Lateral. Usar checkmarks (✓) e X para indicar presença/ausência.
+
+#### Capítulo 4: Resultados e Discussão
+
+**Tabela 4.1: Matriz de Acurácia Completa (R_{i,j})**
+- Localização: Seção 4.1.1
+- Tipo: Tabela numérica
+- Fonte: Gerar com visualize.py (generate_accuracy_matrix_table)
+- Descrição: Matriz completa mostrando R_{i,j} (acurácia na tarefa j após treinar i tarefas). Linhas = etapa de treinamento (após tarefa i), Colunas = tarefa avaliada (j). Valores em porcentagem com 2 casas decimais.
+
+**Tabela 4.2: Métricas Agregadas - Comparação de Métodos**
+- Localização: Seção 4.1.5
+- Tipo: Tabela comparativa
+- Fonte: Gerar com visualize.py (generate_metrics_table)
+- Descrição: Tabela comparando Fine-tuning, LoRA Seq., O-LoRA+EWC, O-LoRA+EWC+Replay (Full), Joint Training. Colunas: ACC ↑, BWT ↑, FWT ↑, Forgetting ↓. Incluir média ± desvio padrão de múltiplas seeds. Destacar melhor resultado em negrito.
+
+**Tabela 4.3: Resultados de Ablação Detalhados**
+- Localização: Seção 4.3.1
+- Tipo: Tabela comparativa
+- Fonte: Gerar com visualize.py (adaptado de metrics table)
+- Descrição: Similar à Tabela 4.2, mas comparando configurações ablacionadas. Linhas: Full, -O-LoRA, -EWC, -Replay, -Lateral. Mostrar contribuição marginal de cada componente.
+
+**Tabela 4.4: Custos Computacionais por Método**
+- Localização: Seção 4.2
+- Tipo: Tabela de eficiência
+- Fonte: Dados experimentais de custos
+- Descrição: Tabela com colunas: Método, Parâmetros Adicionais (total), Crescimento por Tarefa (%), Tempo de Treino (min), Pico VRAM (GB), Latência de Inferência (ms). Comparar todos os métodos.
+
+**Tabela 4.5: Esquecimento por Tarefa - Comparação Detalhada**
+- Localização: Seção 4.1.3
+- Tipo: Tabela analítica
+- Fonte: Calcular de accuracy_matrix
+- Descrição: Tabela mostrando para cada tarefa: A_max (melhor acurácia obtida), A_final (acurácia após todas tarefas), Forgetting (diferença), comparando baseline vs. proposta. Destacar tarefas com maior/menor esquecimento.
+
+**Tabela 4.6: Análise de Sensibilidade de Hiperparâmetros**
+- Localização: Seção 4.4.2
+- Tipo: Tabela experimental
+- Fonte: Experimentos de busca
+- Descrição: Tabela mostrando impacto de diferentes valores de λ_ewc e λ_ortho nas métricas principais. Linhas = combinações de hiperparâmetros, Colunas = ACC, BWT, FWT, Forgetting.
+
+### Equações Destacadas
+
+**Equação 3.1: Decomposição LoRA**
+- Localização: Seção 3.1.3
+- W' = W + ΔW = W + AB, onde A ∈ R^(d×r), B ∈ R^(r×d), r << d
+
+**Equação 3.2: Perda Ortogonal**
+- Localização: Seção 3.1.3
+- L_ortho = Σ_layers Σ_{j<k} ||A_k @ A_j^T||²_F
+
+**Equação 3.3: Perda EWC**
+- Localização: Seção 3.3.5
+- L_ewc = Σ_j (1/2) F_j (θ_j - θ*_j)²
+
+**Equação 3.4: Função de Perda Composta**
+- Localização: Seção 3.3.5
+- L_total = L_task + λ_ortho·L_ortho + λ_ewc·L_ewc
+
+**Equação 4.1: Average Accuracy (ACC)**
+- Localização: Seção 3.5.4
+- ACC = (1/N) Σ_{j=1}^N R_{N,j}
+
+**Equação 4.2: Backward Transfer (BWT)**
+- Localização: Seção 3.5.4
+- BWT = (1/(N-1)) Σ_{i=1}^{N-1} (R_{N,i} - R_{i,i})
+
+**Equação 4.3: Forward Transfer (FWT)**
+- Localização: Seção 3.5.4
+- FWT = (1/(N-1)) Σ_{i=2}^{N} (R_{i-1,i} - R_{0,i})
+
+**Equação 4.4: Forgetting**
+- Localização: Seção 3.5.4
+- F_j = max_{k∈[1,N-1]} R_{k,j} - R_{N,j}
+
+### Notas de Implementação
+
+#### Figuras Geradas Automaticamente (visualize.py)
+- Figura 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9, 4.10
+- Tabela 4.1, 4.2, 4.3, 4.4, 4.5
+
+#### Figuras a Criar Manualmente
+- Figura 1.1, 1.2: Diagramas conceituais (usar draw.io, PowerPoint, ou Inkscape)
+- Figura 2.1, 2.2, 2.3, 2.4, 2.5, 2.6: Adaptar de papers originais ou criar diagramas
+- Figura 3.1, 3.2, 3.3, 3.4, 3.5: Diagramas de arquitetura e processo
+
+#### Figuras da Internet (com adaptação e citação)
+- Figura 2.1: Adaptar de Rusu et al. (2016) - Progressive Neural Networks
+- Figura 2.2: Adaptar de Hu et al. (2021) - LoRA paper
+- Figura 2.4: Adaptar de Kirkpatrick et al. (2017) - EWC paper
+- Figura 2.5: Adaptar de Shin et al. (2017) - Generative Replay
+- Figura 2.6: Adaptar de De Lange et al. (2021) - Continual Learning Survey
+
+#### Recomendações de Ferramentas
+- **Diagramas conceituais**: draw.io, Inkscape, TikZ (LaTeX)
+- **Gráficos de dados**: matplotlib/seaborn (via visualize.py)
+- **Diagramas de arquitetura**: draw.io, PlotNeuralNet (LaTeX)
+- **Equações**: LaTeX
+- **Tabelas**: pandas + LaTeX (via visualize.py)
+
+#### Formato e Resolução
+- Figuras para paper: 300 DPI mínimo, formato PNG ou PDF
+- Gráficos: usar cores colorblind-friendly (viridis, Set2)
+- Tabelas: formato LaTeX para inclusão direta no documento
+- Fontes: tamanho legível (≥10pt) mesmo quando figura é reduzida
+
+---
+
+## 11. Lista de Símbolos
+
+### Símbolos Matemáticos
+
+#### Variáveis e Parâmetros do Modelo
+
+| Símbolo | Descrição |
+|---------|-----------|
+| θ | Parâmetros do modelo neural |
+| θ* | Parâmetros ótimos após treinamento em tarefa anterior |
+| θ_j | j-ésimo parâmetro do modelo |
+| W | Matriz de pesos original (congelada) |
+| W' | Matriz de pesos atualizada |
+| ΔW | Atualização de pesos (delta) |
+| A | Matriz de baixo ranque (down-projection) em LoRA, dimensão d×r |
+| B | Matriz de baixo ranque (up-projection) em LoRA, dimensão r×d |
+| r | Rank (posto) dos adaptadores LoRA |
+| d | Dimensão da camada de rede neural |
+| α | Fator de escalonamento LoRA (lora_alpha) |
+
+#### Tarefas e Sequências
+
+| Símbolo | Descrição |
+|---------|-----------|
+| T_k | k-ésima tarefa na sequência de aprendizado contínuo |
+| T_i, T_j | Tarefas i e j na sequência |
+| N | Número total de tarefas na sequência |
+| k | Índice da tarefa atual |
+| i, j | Índices de tarefas (i para etapa de treinamento, j para tarefa avaliada) |
+
+#### Funções de Perda
+
+| Símbolo | Descrição |
+|---------|-----------|
+| L | Função de perda (loss) |
+| L_total | Perda total composta |
+| L_task | Perda da tarefa atual (cross-entropy) |
+| L_ortho | Termo de regularização ortogonal |
+| L_ewc | Termo de penalização EWC |
+| L_ce | Cross-entropy loss |
+| ∇_θ L | Gradiente da perda em relação aos parâmetros θ |
+
+#### Hiperparâmetros
+
+| Símbolo | Descrição |
+|---------|-----------|
+| λ | Hiperparâmetro geral de regularização |
+| λ_ortho | Peso do termo de ortogonalidade |
+| λ_ewc | Peso do termo EWC |
+| η | Taxa de aprendizado (learning rate) |
+| γ | Fator de decaimento para Online EWC |
+| β1, β2 | Parâmetros do otimizador AdamW |
+
+#### Matriz de Informação de Fisher (EWC)
+
+| Símbolo | Descrição |
+|---------|-----------|
+| F | Matriz de informação de Fisher |
+| F_j | j-ésimo elemento diagonal da matriz de Fisher |
+| E[·] | Valor esperado (expectation) |
+
+#### Métricas de Desempenho
+
+| Símbolo | Descrição |
+|---------|-----------|
+| R_{i,j} | Acurácia na tarefa j após treinar até tarefa i |
+| ACC | Average Accuracy (Acurácia Média) |
+| BWT | Backward Transfer (Transferência Reversa) |
+| FWT | Forward Transfer (Transferência Progressiva) |
+| F_j | Forgetting (Esquecimento) na tarefa j |
+| A_j^max | Acurácia máxima obtida na tarefa j |
+| A_j^final | Acurácia final na tarefa j após todas tarefas |
+| R_{0,i} | Acurácia inicial (baseline) na tarefa i antes de treinamento |
+
+#### Dados e Amostras
+
+| Símbolo | Descrição |
+|---------|-----------|
+| x | Entrada (texto tokenizado) |
+| y | Rótulo/classe da amostra |
+| B | Batch (lote) de dados |
+| B' | Batch misto (dados reais + sintéticos) |
+| S | Conjunto de amostras sintéticas (replay) |
+| p_replay | Proporção de exemplos sintéticos no batch |
+
+#### Dimensões e Tamanhos
+
+| Símbolo | Descrição |
+|---------|-----------|
+| n | Número de amostras no dataset |
+| m | Tamanho do batch |
+| d_model | Dimensão do modelo (hidden size) |
+| L | Número de camadas do modelo |
+| V | Tamanho do vocabulário |
+| seq_len | Comprimento da sequência (máximo de tokens) |
+
+### Operadores Matemáticos
+
+| Símbolo | Descrição |
+|---------|-----------|
+| @ | Multiplicação de matrizes |
+| ⊗ | Produto de Kronecker |
+| ||·||² | Norma L2 ao quadrado |
+| ||·||²_F | Norma de Frobenius ao quadrado |
+| Σ | Somatório |
+| ∇ | Operador gradiente (nabla) |
+| ∂ | Derivada parcial |
+| → | Converge para / mapeia para |
+| ≈ | Aproximadamente igual |
+| << | Muito menor que |
+| ∈ | Pertence a (elemento de conjunto) |
+| ∀ | Para todo / para qualquer |
+| argmax | Argumento que maximiza |
+| argmin | Argumento que minimiza |
+| max | Máximo |
+| min | Mínimo |
+
+### Conjuntos e Espaços
+
+| Símbolo | Descrição |
+|---------|-----------|
+| ℝ | Conjunto dos números reais |
+| ℝ^d | Espaço vetorial real de dimensão d |
+| ℝ^(d×r) | Espaço de matrizes reais d×r |
+| ℕ | Conjunto dos números naturais |
+| [1,N] | Intervalo de inteiros de 1 a N |
+| {·} | Conjunto (set notation) |
+
+### Símbolos Especiais do Modelo
+
+| Símbolo | Descrição |
+|---------|-----------|
+| [CLS] | Token especial de classificação (BERT) |
+| [SEP] | Token especial de separação (BERT) |
+| [PAD] | Token de padding |
+| [UNK] | Token desconhecido (unknown) |
+| Q, K, V | Matrizes de Query, Key, Value (atenção) |
+| O | Matriz de saída (Output) da atenção |
+| MLP | Multi-Layer Perceptron (rede feed-forward) |
+
+### Índices e Subscritos
+
+| Notação | Descrição |
+|---------|-----------|
+| x_i | i-ésimo elemento de x |
+| W^(l) | Peso da camada l |
+| θ^{(t)} | Parâmetros na iteração/época t |
+| A_k | Matriz A do adaptador da tarefa k |
+| ΔW_i | Delta de pesos para tarefa i |
+| {·}_{i<k} | Conjunto de elementos para tarefas i menores que k |
+| {·}_{<k} | Mesmo que acima (notação abreviada) |
+
+### Símbolos Estatísticos
+
+| Símbolo | Descrição |
+|---------|-----------|
+| μ | Média |
+| σ | Desvio padrão |
+| σ² | Variância |
+| ~ | Distribuído como / amostrado de |
+| 𝒩(μ,σ²) | Distribuição normal com média μ e variância σ² |
+| p(·) | Probabilidade / distribuição de probabilidade |
+| E[·] | Valor esperado (expectation) |
+
+### Símbolos de Otimização
+
+| Símbolo | Descrição |
+|---------|-----------|
+| ∇_θ | Gradiente em relação a θ |
+| ∂L/∂θ | Derivada parcial da perda em relação a θ |
+| η_t | Taxa de aprendizado na iteração t |
+| m_t | Primeiro momento (momentum) no AdamW |
+| v_t | Segundo momento (velocidade) no AdamW |
+| ε | Termo de estabilização numérica (epsilon) |
+| clip(·) | Operação de gradient clipping |
+
+### Símbolos de Projeção e Ortogonalidade
+
+| Símbolo | Descrição |
+|---------|-----------|
+| A^T | Transposta da matriz A |
+| A^(-1) | Inversa da matriz A |
+| span(A) | Subespaço gerado pelas colunas de A |
+| proj_U(v) | Projeção do vetor v no subespaço U |
+| ⊥ | Ortogonal a |
+| cos(θ) | Cosseno do ângulo entre vetores |
+
+### Constantes e Valores Especiais
+
+| Símbolo | Descrição |
+|---------|-----------|
+| 0 | Zero / vetor/matriz nula |
+| I | Matriz identidade |
+| ∞ | Infinito |
+| e | Constante de Euler (≈2.718) |
+| π | Pi (≈3.14159) |
+
+### Notações de Algoritmo
+
+| Símbolo | Descrição |
+|---------|-----------|
+| ← | Atribuição (assign) |
+| ≡ | Definido como / equivalente a |
+| ⇒ | Implica |
+| ⇔ | Se e somente se |
+| ∧ | E lógico (AND) |
+| ∨ | Ou lógico (OR) |
+| ¬ | Negação lógica (NOT) |
+
+### Abreviações em Fórmulas
+
+| Símbolo | Descrição |
+|---------|-----------|
+| s.t. | Subject to (sujeito a) |
+| w.r.t. | With respect to (com respeito a) |
+| i.e. | Id est (isto é) |
+| e.g. | Exempli gratia (por exemplo) |
+| cf. | Confer (compare) |
+| et al. | Et alii (e outros) |
+
+### Símbolos de Complexidade Computacional
+
+| Símbolo | Descrição |
+|---------|-----------|
+| O(·) | Notação Big-O (ordem de complexidade) |
+| Θ(·) | Notação Theta (complexidade assintótica justa) |
+| Ω(·) | Notação Omega (limite inferior) |
+| FLOPs | Floating Point Operations (operações de ponto flutuante) |
+
+### Convenções de Notação
+
+#### Dimensões de Tensores
+- Escalares: letras minúsculas (a, b, λ)
+- Vetores: letras minúsculas em negrito (quando aplicável) ou com subscrito (x_i)
+- Matrizes: letras maiúsculas (W, A, B, F)
+- Tensores: letras maiúsculas com sobrescrito indicando ordem
+
+#### Índices
+- i, j, k: índices de tarefas ou iterações
+- l: índice de camada
+- t: índice de tempo/época
+- n, m: tamanhos de conjuntos ou batches
+
+#### Espaços
+- Parâmetros: θ ∈ ℝ^d
+- Entradas: x ∈ ℝ^{seq_len × d_model}
+- Saídas: y ∈ {1, 2, ..., C} onde C é o número de classes
+
+### Notas sobre Uso
+
+1. **Consistência**: Mantemos notação consistente ao longo do paper. Por exemplo, sempre usamos k para tarefa atual e i,j para tarefas em geral.
+
+2. **Clareza contextual**: Quando o mesmo símbolo pode ter significados diferentes (e.g., L para perda e para número de camadas), o contexto deixa claro o uso.
+
+3. **Subscritos vs. Sobrescritos**: Subscritos indicam índices ou pertencimento (θ_j, W_k), enquanto sobrescritos indicam exponenciação ((·)²) ou camadas (W^(l)).
+
+4. **Vetores e Matrizes**: Por convenção, vetores são tratados como matrizes coluna, a menos que indicado explicitamente com transposta (v^T).
+
+5. **Multiplicação de Matrizes**: Usamos @ para deixar explícita a multiplicação de matrizes em pseudocódigo e contextos algorítmicos, e justaposição (AB) em contextos matemáticos formais.
