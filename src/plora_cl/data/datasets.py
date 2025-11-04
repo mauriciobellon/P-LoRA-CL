@@ -96,34 +96,42 @@ def load_task_dataset(
     """
     dataset = load_dataset(task_config.dataset_name, split=split)
 
-    # Rename columns to standard names
+    # Rename columns to standard names (text, label)
+    # First check if text column exists with the configured name
     if task_config.text_column not in dataset.column_names:
         # Try to find text column
         text_cols = [
             col
             for col in dataset.column_names
-            if col in ["text", "content", "question", "title"]
+            if col in ["text", "content", "question", "title", "review"]
         ]
         if text_cols:
             dataset = dataset.rename_column(text_cols[0], "text")
         else:
             raise ValueError(
-                f"Could not find text column in {task_config.dataset_name}"
+                f"Could not find text column in {task_config.dataset_name}. Available columns: {dataset.column_names}"
             )
+    elif task_config.text_column != "text":
+        # Rename to standard "text" column
+        dataset = dataset.rename_column(task_config.text_column, "text")
 
+    # Now handle label column
     if task_config.label_column not in dataset.column_names:
         # Try to find label column
         label_cols = [
             col
             for col in dataset.column_names
-            if col in ["label", "topic", "class"]
+            if col in ["label", "topic", "class", "labels"]
         ]
         if label_cols:
             dataset = dataset.rename_column(label_cols[0], "label")
         else:
             raise ValueError(
-                f"Could not find label column in {task_config.dataset_name}"
+                f"Could not find label column in {task_config.dataset_name}. Available columns: {dataset.column_names}"
             )
+    elif task_config.label_column != "label":
+        # Rename to standard "label" column
+        dataset = dataset.rename_column(task_config.label_column, "label")
 
     return dataset
 
