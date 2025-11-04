@@ -67,8 +67,9 @@ class BaseCLModel(nn.Module):
         # Get hidden size from base model
         hidden_size = self.base_model.config.hidden_size
 
-        # Create classification head
+        # Create classification head and move to device
         head = nn.Linear(hidden_size, num_classes)
+        head = head.to(self.device)
         self.task_heads[task_name] = head
 
     def forward(
