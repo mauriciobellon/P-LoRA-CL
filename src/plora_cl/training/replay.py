@@ -170,5 +170,25 @@ class PseudoReplayGenerator:
 
         # Trim to exact number needed
         return replay_samples[:num_replay]
+    
+    def get_state(self) -> Dict:
+        """
+        Get state for checkpointing.
+        
+        Returns:
+            State dictionary
+        """
+        return {
+            "class_templates": self.class_templates,
+        }
+    
+    def load_state(self, state: Dict):
+        """
+        Load state from checkpoint.
+        
+        Args:
+            state: State dictionary
+        """
+        self.class_templates = state.get("class_templates", self.class_templates)
 
 

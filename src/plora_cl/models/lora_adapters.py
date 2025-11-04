@@ -166,3 +166,31 @@ class LoRAAdapterManager:
         """Save adapter state for a task (already saved in task_peft_models)."""
         # State is already saved in task_peft_models, nothing to do
         pass
+    
+    def get_all_adapter_states(self) -> Dict[str, Dict]:
+        """
+        Get all adapter states for checkpointing.
+        
+        Returns:
+            Dictionary mapping task names to adapter state dicts
+        """
+        adapter_states = {}
+        for task_name, peft_model in self.task_peft_models.items():
+            adapter_states[task_name] = peft_model.state_dict()
+        return adapter_states
+    
+    def load_adapter_state(self, task_name: str, state_dict: Dict):
+        """
+        Load adapter state from checkpoint.
+        
+        Args:
+            task_name: Name of the task
+            state_dict: State dictionary to load
+        """
+        if task_name in self.task_peft_models:
+            self.task_peft_models[task_name].load_state_dict(state_dict)
+    
+    @property
+    def adapters(self) -> Dict[str, PeftModel]:
+        """Get all adapters (alias for task_peft_models)."""
+        return self.task_peft_models

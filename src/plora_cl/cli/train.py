@@ -35,10 +35,12 @@ def train_command(args):
         use_orthogonal=config.get("use_orthogonal", args.use_orthogonal),
         use_replay=config.get("use_replay", args.use_replay),
         use_lateral=config.get("use_lateral", args.use_lateral),
+        checkpoint_every=config.get("checkpoint_every", args.checkpoint_every),
+        keep_last_n_checkpoints=config.get("keep_last_n_checkpoints", args.keep_last_n_checkpoints),
     )
 
     # Train sequence
-    trainer.train_sequence()
+    trainer.train_sequence(resume=args.resume)
 
 
 def main():
@@ -185,6 +187,25 @@ def main():
         action="store_true",
         default=False,
         help="Use lateral connections",
+    )
+    
+    # Checkpointing config
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=100,
+        help="Save checkpoint every N steps (0 to disable)",
+    )
+    parser.add_argument(
+        "--keep-last-n-checkpoints",
+        type=int,
+        default=3,
+        help="Keep only last N checkpoints",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume training from latest checkpoint",
     )
 
     args = parser.parse_args()

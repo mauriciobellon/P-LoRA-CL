@@ -28,4 +28,10 @@ use_orthogonal: true
 use_replay: true
 use_lateral: false
 
+# Checkpointing
+# Save checkpoint every N steps (0 to disable)
+checkpoint_every: 100
+# Keep only last N checkpoints to save disk space
+keep_last_n_checkpoints: 3
+
 

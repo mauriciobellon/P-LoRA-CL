@@ -188,5 +188,29 @@ class CLMetrics:
             "forward_transfer": self.compute_forward_transfer(),
             "forgetting": self.compute_forgetting(),
         }
+    
+    def get_state(self) -> Dict:
+        """
+        Get the state for checkpointing.
+        
+        Returns:
+            Dictionary with accuracy and F1 matrices
+        """
+        return {
+            "accuracy_matrix": self.accuracy_matrix.copy(),
+            "f1_matrix": self.f1_matrix.copy(),
+            "num_tasks": self.num_tasks,
+        }
+    
+    def load_state(self, state: Dict):
+        """
+        Load state from checkpoint.
+        
+        Args:
+            state: State dictionary
+        """
+        self.accuracy_matrix = state["accuracy_matrix"].copy()
+        self.f1_matrix = state["f1_matrix"].copy()
+        self.num_tasks = state["num_tasks"]
 
 

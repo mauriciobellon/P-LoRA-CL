@@ -1,6 +1,7 @@
 """Main trainer for continual learning experiments."""
 
 import time
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -48,6 +49,8 @@ class CLTrainer:
         gradient_accumulation_steps: int = 1,
         warmup_ratio: float = 0.1,
         max_grad_norm: float = 1.0,
+        checkpoint_every: int = 100,
+        keep_last_n_checkpoints: int = 3,
     ):
         """
         Initialize CL trainer.
@@ -73,6 +76,8 @@ class CLTrainer:
             gradient_accumulation_steps: Gradient accumulation steps
             warmup_ratio: Warmup ratio for LR scheduler
             max_grad_norm: Maximum gradient norm for clipping
+            checkpoint_every: Save checkpoint every N steps (0 to disable)
+            keep_last_n_checkpoints: Keep only last N checkpoints to save disk space
         """
         # Set device
         if device == "auto":
@@ -147,6 +152,15 @@ class CLTrainer:
         self.current_task_idx = 0
         self.trained_tasks: List[str] = []
         self.seed = seed
+        
+        # Checkpointing
+        self.checkpoint_every = checkpoint_every
+        self.keep_last_n_checkpoints = keep_last_n_checkpoints
+        self.checkpoint_dir = Path(experiment_dir) / experiment_name / "checkpoints"
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.global_step = 0
+        self.start_epoch = 0
+        self.start_batch = 0
 
     def _set_seed(self, seed: int):
         """Set random seed for reproducibility."""
@@ -156,11 +170,150 @@ class CLTrainer:
         import random
         random.seed(seed)
 
+    def save_checkpoint(
+        self,
+        task_idx: int,
+        epoch: int,
+        batch_idx: int,
+        optimizer,
+        scheduler,
+        loss: float,
+    ):
+        """
+        Save a training checkpoint.
+        
+        Args:
+            task_idx: Current task index
+            epoch: Current epoch
+            batch_idx: Current batch index
+            optimizer: Optimizer state
+            scheduler: Scheduler state
+            loss: Current loss value
+        """
+        checkpoint_path = self.checkpoint_dir / f"checkpoint_task{task_idx}_epoch{epoch}_batch{batch_idx}.pt"
+        
+        checkpoint = {
+            "global_step": self.global_step,
+            "task_idx": task_idx,
+            "epoch": epoch,
+            "batch_idx": batch_idx,
+            "trained_tasks": self.trained_tasks,
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "loss": loss,
+            "seed": self.seed,
+            "metrics_state": self.metrics.get_state(),
+        }
+        
+        # Save base model state
+        checkpoint["base_model_state_dict"] = self.base_model.base_model.state_dict()
+        
+        # Save task heads
+        checkpoint["task_heads"] = {
+            name: head.state_dict()
+            for name, head in self.base_model.task_heads.items()
+        }
+        
+        # Save adapter states
+        checkpoint["adapter_states"] = self.adapter_manager.get_all_adapter_states()
+        checkpoint["adapter_config"] = {
+            "r": self.adapter_manager.r,
+            "lora_alpha": self.adapter_manager.lora_alpha,
+        }
+        
+        # Save EWC state if enabled
+        if self.ewc is not None:
+            checkpoint["ewc_state"] = self.ewc.get_state()
+        
+        # Save replay generator state if enabled
+        if self.replay_generator is not None:
+            checkpoint["replay_state"] = self.replay_generator.get_state()
+        
+        torch.save(checkpoint, checkpoint_path)
+        print(f"Checkpoint saved: {checkpoint_path}", flush=True)
+        
+        # Clean up old checkpoints
+        self._cleanup_old_checkpoints()
+        
+        return checkpoint_path
+
+    def _cleanup_old_checkpoints(self):
+        """Remove old checkpoints, keeping only the last N."""
+        if self.keep_last_n_checkpoints <= 0:
+            return
+        
+        checkpoints = sorted(self.checkpoint_dir.glob("checkpoint_*.pt"), key=lambda x: x.stat().st_mtime)
+        
+        if len(checkpoints) > self.keep_last_n_checkpoints:
+            for old_checkpoint in checkpoints[:-self.keep_last_n_checkpoints]:
+                old_checkpoint.unlink()
+                print(f"Removed old checkpoint: {old_checkpoint.name}", flush=True)
+
+    def load_checkpoint(self, checkpoint_path: str):
+        """
+        Load a training checkpoint and resume training.
+        
+        Args:
+            checkpoint_path: Path to checkpoint file
+        """
+        print(f"Loading checkpoint from {checkpoint_path}...", flush=True)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        
+        # Restore training state
+        self.global_step = checkpoint["global_step"]
+        self.current_task_idx = checkpoint["task_idx"]
+        self.start_epoch = checkpoint["epoch"]
+        self.start_batch = checkpoint["batch_idx"] + 1
+        self.trained_tasks = checkpoint["trained_tasks"]
+        
+        # Restore base model
+        self.base_model.base_model.load_state_dict(checkpoint["base_model_state_dict"])
+        
+        # Restore task heads
+        for name, state_dict in checkpoint["task_heads"].items():
+            if name not in self.base_model.task_heads:
+                task_idx = self.task_names.index(name)
+                task_config = self.task_configs[task_idx]
+                self.base_model.add_task_head(name, task_config.num_classes)
+            self.base_model.task_heads[name].load_state_dict(state_dict)
+        
+        # Restore adapters
+        for task_name, adapter_state in checkpoint["adapter_states"].items():
+            if task_name not in self.adapter_manager.adapters:
+                self.adapter_manager.add_task_adapter(task_name)
+            self.adapter_manager.load_adapter_state(task_name, adapter_state)
+        
+        # Restore EWC state
+        if self.ewc is not None and "ewc_state" in checkpoint:
+            self.ewc.load_state(checkpoint["ewc_state"])
+        
+        # Restore replay generator state
+        if self.replay_generator is not None and "replay_state" in checkpoint:
+            self.replay_generator.load_state(checkpoint["replay_state"])
+        
+        # Restore metrics
+        self.metrics.load_state(checkpoint["metrics_state"])
+        
+        print(f"Checkpoint loaded! Resuming from task {self.current_task_idx}, epoch {self.start_epoch}, batch {self.start_batch}", flush=True)
+        
+        return checkpoint["optimizer_state_dict"], checkpoint["scheduler_state_dict"]
+
+    def get_latest_checkpoint(self) -> Optional[Path]:
+        """
+        Find the latest checkpoint file.
+        
+        Returns:
+            Path to latest checkpoint or None if no checkpoints exist
+        """
+        checkpoints = sorted(self.checkpoint_dir.glob("checkpoint_*.pt"), key=lambda x: x.stat().st_mtime)
+        return checkpoints[-1] if checkpoints else None
+
     def train_task(
         self,
         task_idx: int,
         train_loader: DataLoader,
         val_loader: Optional[DataLoader] = None,
+        resume_from_checkpoint: bool = False,
     ):
         """
         Train on a single task.
@@ -169,6 +322,7 @@ class CLTrainer:
             task_idx: Index of the task
             train_loader: Training data loader
             val_loader: Validation data loader (optional)
+            resume_from_checkpoint: Whether to resume from checkpoint
         """
         task_config = self.task_configs[task_idx]
         task_name = task_config.name
@@ -177,14 +331,19 @@ class CLTrainer:
         print(f"Training on Task {task_idx + 1}: {task_name}", flush=True)
         print(f"{'='*60}", flush=True)
 
-        # Add task head
-        print(f"Adding task head for {task_name} with {task_config.num_classes} classes...", flush=True)
-        self.base_model.add_task_head(task_name, task_config.num_classes)
+        # Add task head if not resuming or if it doesn't exist
+        if task_name not in self.base_model.task_heads:
+            print(f"Adding task head for {task_name} with {task_config.num_classes} classes...", flush=True)
+            self.base_model.add_task_head(task_name, task_config.num_classes)
 
-        # Add LoRA adapter for this task
-        print(f"Adding LoRA adapter for {task_name}...", flush=True)
-        peft_model = self.adapter_manager.add_task_adapter(task_name)
-        print(f"LoRA adapter added successfully!", flush=True)
+        # Add LoRA adapter for this task if not resuming or if it doesn't exist
+        if task_name not in self.adapter_manager.adapters:
+            print(f"Adding LoRA adapter for {task_name}...", flush=True)
+            peft_model = self.adapter_manager.add_task_adapter(task_name)
+            print(f"LoRA adapter added successfully!", flush=True)
+        else:
+            peft_model = self.adapter_manager.adapters[task_name]
+            
         self.adapter_manager.activate_task(task_name)
 
         # Freeze previous adapters
@@ -224,6 +383,12 @@ class CLTrainer:
             num_warmup_steps=num_warmup_steps,
             num_training_steps=num_training_steps,
         )
+        
+        # Load checkpoint states if resuming
+        if resume_from_checkpoint:
+            optimizer_state, scheduler_state = self.load_checkpoint(str(self.get_latest_checkpoint()))
+            optimizer.load_state_dict(optimizer_state)
+            scheduler.load_state_dict(scheduler_state)
 
         # Initialize loss function
         loss_fn = CompositeLoss(
@@ -236,16 +401,28 @@ class CLTrainer:
         # Training loop
         peft_model.train()
         start_time = time.time()
+        
+        # Determine starting point
+        start_epoch = self.start_epoch if resume_from_checkpoint else 0
         print(f"\nStarting training for {self.epochs} epochs with {len(train_loader)} batches per epoch...", flush=True)
+        if resume_from_checkpoint:
+            print(f"Resuming from epoch {start_epoch + 1}, batch {self.start_batch}", flush=True)
 
-        for epoch in range(self.epochs):
+        for epoch in range(start_epoch, self.epochs):
             print(f"\n--- Epoch {epoch + 1}/{self.epochs} ---", flush=True)
             epoch_loss = 0.0
             num_batches = 0
+            
+            # Determine starting batch
+            start_batch = self.start_batch if (resume_from_checkpoint and epoch == start_epoch) else 0
 
             for batch_idx, batch in enumerate(train_loader):
+                # Skip batches if resuming from checkpoint
+                if batch_idx < start_batch:
+                    continue
+                    
                 if batch_idx % 10 == 0:
-                    print(f"  Batch {batch_idx}/{len(train_loader)}", end='\r', flush=True)
+                    print(f"  Batch {batch_idx}/{len(train_loader)} (global step: {self.global_step})", end='\r', flush=True)
 
                 # Move batch to device
                 input_ids = batch["input_ids"].to(self.device)
@@ -308,6 +485,18 @@ class CLTrainer:
                     optimizer.step()
                     scheduler.step()
                     optimizer.zero_grad()
+                    self.global_step += 1
+                    
+                    # Save checkpoint periodically
+                    if self.checkpoint_every > 0 and self.global_step % self.checkpoint_every == 0:
+                        self.save_checkpoint(
+                            task_idx=task_idx,
+                            epoch=epoch,
+                            batch_idx=batch_idx,
+                            optimizer=optimizer,
+                            scheduler=scheduler,
+                            loss=loss_dict["total_loss"].item(),
+                        )
 
                 epoch_loss += loss_dict["total_loss"].item()
                 num_batches += 1
@@ -322,8 +511,23 @@ class CLTrainer:
                 task_name=task_name,
                 metrics={"loss": avg_loss},
             )
+            
+            # Save checkpoint at end of epoch
+            if self.checkpoint_every > 0:
+                self.save_checkpoint(
+                    task_idx=task_idx,
+                    epoch=epoch,
+                    batch_idx=len(train_loader) - 1,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    loss=avg_loss,
+                )
 
         training_time = time.time() - start_time
+        
+        # Reset start epoch and batch for next task
+        self.start_epoch = 0
+        self.start_batch = 0
 
         # Save adapter state
         self.adapter_manager.save_adapter_state(task_name)
@@ -416,8 +620,13 @@ class CLTrainer:
 
         return {"accuracy": float(accuracy)}
 
-    def train_sequence(self):
-        """Train on the full sequence of tasks."""
+    def train_sequence(self, resume: bool = False):
+        """
+        Train on the full sequence of tasks.
+        
+        Args:
+            resume: Whether to resume from latest checkpoint
+        """
         print("\n" + "="*80, flush=True)
         print("STARTING CONTINUAL LEARNING TRAINING", flush=True)
         print("="*80, flush=True)
@@ -427,6 +636,17 @@ class CLTrainer:
         print(f"Epochs per task: {self.epochs}", flush=True)
         print(f"LoRA rank: {self.adapter_manager.r}, alpha: {self.adapter_manager.lora_alpha}", flush=True)
         print("="*80 + "\n", flush=True)
+        
+        # Check for existing checkpoint if resume requested
+        resume_from_checkpoint = False
+        if resume:
+            latest_checkpoint = self.get_latest_checkpoint()
+            if latest_checkpoint:
+                print(f"Found checkpoint: {latest_checkpoint}", flush=True)
+                # Don't load here, will load in train_task
+                resume_from_checkpoint = True
+            else:
+                print("No checkpoint found, starting from scratch", flush=True)
 
         # Save config
         config = ExperimentConfig(
@@ -450,9 +670,13 @@ class CLTrainer:
         self.tracker.save_config(config)
 
         # Train each task sequentially
-        for task_idx in range(len(self.task_configs)):
+        start_task = self.current_task_idx if resume_from_checkpoint else 0
+        for task_idx in range(start_task, len(self.task_configs)):
             task_config = self.task_configs[task_idx]
             task_name = task_config.name
+            
+            # Check if we should resume for this specific task
+            should_resume = (resume_from_checkpoint and task_idx == start_task)
 
             # Load datasets
             train_dataset = load_task_dataset(task_config, split="train[:80%]")
@@ -499,7 +723,7 @@ class CLTrainer:
                     print(f"  {prev_config.name}: {metrics['accuracy']:.4f}")
 
             # Train on current task
-            self.train_task(task_idx, train_loader, val_loader)
+            self.train_task(task_idx, train_loader, val_loader, resume_from_checkpoint=should_resume)
 
             # Evaluate on all tasks seen so far
             print("\nEvaluating on all tasks...")

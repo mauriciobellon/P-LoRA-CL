@@ -167,3 +167,31 @@ class EWC:
         self.lambda_ewc = checkpoint.get("lambda_ewc", self.lambda_ewc)
         self.online = checkpoint.get("online", self.online)
         self.decay_factor = checkpoint.get("decay_factor", self.decay_factor)
+    
+    def get_state(self) -> Dict:
+        """
+        Get EWC state for checkpointing.
+        
+        Returns:
+            State dictionary
+        """
+        return {
+            "fisher_info": self.fisher_info,
+            "optimal_params": self.optimal_params,
+            "lambda_ewc": self.lambda_ewc,
+            "online": self.online,
+            "decay_factor": self.decay_factor,
+        }
+    
+    def load_state(self, state: Dict):
+        """
+        Load EWC state from checkpoint.
+        
+        Args:
+            state: State dictionary
+        """
+        self.fisher_info = state["fisher_info"]
+        self.optimal_params = state["optimal_params"]
+        self.lambda_ewc = state.get("lambda_ewc", self.lambda_ewc)
+        self.online = state.get("online", self.online)
+        self.decay_factor = state.get("decay_factor", self.decay_factor)

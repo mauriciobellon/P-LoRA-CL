@@ -33,7 +33,32 @@ uv run python -m plora_cl.cli.train --config experiments/config.yaml.example
 
 # Treinar sem EWC (ablação)
 uv run python -m plora_cl.cli.train --experiment-name ablation-no-ewc --no-ewc
+
+# Retomar treinamento de checkpoint
+uv run python -m plora_cl.cli.train --experiment-name baseline --resume
 ```
+
+### Checkpointing
+
+O sistema salva automaticamente checkpoints durante o treinamento para permitir retomada em caso de interrupção:
+
+```bash
+# Configurar frequência de checkpoints
+uv run python -m plora_cl.cli.train \
+  --experiment-name baseline \
+  --checkpoint-every 100 \
+  --keep-last-n-checkpoints 3
+
+# Retomar de checkpoint
+uv run python -m plora_cl.cli.train --experiment-name baseline --resume
+```
+
+Os checkpoints são salvos em `experiments/<experiment-name>/checkpoints/` e incluem:
+- Estado do modelo e adaptadores LoRA
+- Estado do otimizador e scheduler
+- Métricas de avaliação
+- Estado do EWC e replay generator
+- Progresso do treinamento (tarefa, época, batch)
 
 ### Visualização
 
@@ -67,6 +92,8 @@ Principais parâmetros:
 - `lambda_ortho`: Peso da regularização ortogonal (padrão: 0.1)
 - `lambda_ewc`: Peso do EWC (padrão: 100.0)
 - `replay_ratio`: Proporção de replay no batch (padrão: 0.2)
+- `checkpoint_every`: Salvar checkpoint a cada N steps (padrão: 100, 0 para desativar)
+- `keep_last_n_checkpoints`: Manter apenas os últimos N checkpoints (padrão: 3)
 
 ## Testes
 
