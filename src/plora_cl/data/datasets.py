@@ -62,7 +62,7 @@ DBPEDIA = TaskConfig(
 YAHOO_ANSWERS = TaskConfig(
     name="yahoo_answers_topics",
     dataset_name="yahoo_answers_topics",
-    text_column="text",
+    text_column="question_title",  # Will concatenate with question_content
     label_column="topic",
     num_classes=10,
     max_length=512,
@@ -96,24 +96,40 @@ def load_task_dataset(
     """
     dataset = load_dataset(task_config.dataset_name, split=split)
 
-    # Rename columns to standard names (text, label)
-    # First check if text column exists with the configured name
-    if task_config.text_column not in dataset.column_names:
-        # Try to find text column
-        text_cols = [
-            col
-            for col in dataset.column_names
-            if col in ["text", "content", "question", "title", "review"]
-        ]
-        if text_cols:
-            dataset = dataset.rename_column(text_cols[0], "text")
-        else:
-            raise ValueError(
-                f"Could not find text column in {task_config.dataset_name}. Available columns: {dataset.column_names}"
-            )
-    elif task_config.text_column != "text":
-        # Rename to standard "text" column
-        dataset = dataset.rename_column(task_config.text_column, "text")
+    # Special handling for Yahoo Answers - concatenate multiple text fields
+    if task_config.dataset_name == "yahoo_answers_topics":
+        def combine_text(example):
+            # Combine question_title, question_content, and best_answer
+            parts = []
+            if "question_title" in example and example["question_title"]:
+                parts.append(str(example["question_title"]))
+            if "question_content" in example and example["question_content"]:
+                parts.append(str(example["question_content"]))
+            if "best_answer" in example and example["best_answer"]:
+                parts.append(str(example["best_answer"]))
+            example["text"] = " ".join(parts)
+            return example
+        
+        dataset = dataset.map(combine_text)
+    else:
+        # Rename columns to standard names (text, label)
+        # First check if text column exists with the configured name
+        if task_config.text_column not in dataset.column_names:
+            # Try to find text column
+            text_cols = [
+                col
+                for col in dataset.column_names
+                if col in ["text", "content", "question", "title", "review"]
+            ]
+            if text_cols:
+                dataset = dataset.rename_column(text_cols[0], "text")
+            else:
+                raise ValueError(
+                    f"Could not find text column in {task_config.dataset_name}. Available columns: {dataset.column_names}"
+                )
+        elif task_config.text_column != "text":
+            # Rename to standard "text" column
+            dataset = dataset.rename_column(task_config.text_column, "text")
 
     # Now handle label column
     if task_config.label_column not in dataset.column_names:
