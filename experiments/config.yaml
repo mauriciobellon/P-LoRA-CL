@@ -30,8 +30,8 @@ use_lateral: false
 
 # Checkpointing
 # Save checkpoint every N steps (0 to disable)
-checkpoint_every: 100
+checkpoint_every: 1000
 # Keep only last N checkpoints to save disk space
-keep_last_n_checkpoints: 3
+keep_last_n_checkpoints: 1
 
 

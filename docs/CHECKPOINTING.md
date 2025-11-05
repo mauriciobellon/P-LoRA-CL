@@ -86,7 +86,13 @@ experiments/
 
 ## Gerenciamento de Espaço
 
-Para economizar espaço em disco, o sistema mantém apenas os N últimos checkpoints (configurável via `keep_last_n_checkpoints`). Checkpoints mais antigos são automaticamente removidos.
+Para economizar espaço em disco, o sistema mantém apenas os N últimos checkpoints **por tarefa** (configurável via `keep_last_n_checkpoints`). Checkpoints mais antigos **da mesma tarefa** são automaticamente removidos, mas **checkpoints de tarefas completadas são preservados**.
+
+Isso significa que se você tem 5 tarefas e `keep_last_n_checkpoints=3`:
+- Durante o treinamento da tarefa 0: mantém os 3 últimos checkpoints da tarefa 0
+- Ao completar a tarefa 0: preserva o checkpoint final da tarefa 0
+- Durante o treinamento da tarefa 1: mantém os 3 últimos checkpoints da tarefa 1 + checkpoint final da tarefa 0
+- E assim por diante...
 
 ### Tamanho Médio de Checkpoints
 

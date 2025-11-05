@@ -203,6 +203,7 @@ class CLTrainer:
             "loss": loss,
             "seed": self.seed,
             "metrics_state": self.metrics.get_state(),
+            "current_task_idx": self.current_task_idx,  # Add for better resume logic
         }
         
         # Save base model state
@@ -232,20 +233,27 @@ class CLTrainer:
         torch.save(checkpoint, checkpoint_path)
         print(f"Checkpoint saved: {checkpoint_path}", flush=True)
         
-        # Clean up old checkpoints
-        self._cleanup_old_checkpoints()
+        # Clean up old checkpoints for this task only
+        self._cleanup_old_checkpoints(task_idx)
         
         return checkpoint_path
 
-    def _cleanup_old_checkpoints(self):
-        """Remove old checkpoints, keeping only the last N."""
+    def _cleanup_old_checkpoints(self, current_task_idx: int):
+        """
+        Remove old checkpoints for the current task only, keeping last N per task.
+        This preserves checkpoints from completed tasks while managing disk space.
+        """
         if self.keep_last_n_checkpoints <= 0:
             return
         
-        checkpoints = sorted(self.checkpoint_dir.glob("checkpoint_*.pt"), key=lambda x: x.stat().st_mtime)
+        # Only clean up checkpoints for the current task
+        task_checkpoints = sorted(
+            self.checkpoint_dir.glob(f"checkpoint_task{current_task_idx}_*.pt"),
+            key=lambda x: x.stat().st_mtime
+        )
         
-        if len(checkpoints) > self.keep_last_n_checkpoints:
-            for old_checkpoint in checkpoints[:-self.keep_last_n_checkpoints]:
+        if len(task_checkpoints) > self.keep_last_n_checkpoints:
+            for old_checkpoint in task_checkpoints[:-self.keep_last_n_checkpoints]:
                 old_checkpoint.unlink()
                 print(f"Removed old checkpoint: {old_checkpoint.name}", flush=True)
 
@@ -706,12 +714,22 @@ class CLTrainer:
 
         # Train each task sequentially
         start_task = self.current_task_idx if resume_from_checkpoint else 0
+        
+        # If resuming, check if current task is completed and move to next
+        if resume_from_checkpoint and start_task < len(self.task_configs):
+            current_task_name = self.task_configs[start_task].name
+            if current_task_name in self.trained_tasks:
+                print(f"Task {start_task} ({current_task_name}) already in trained_tasks, moving to next", flush=True)
+                start_task += 1
+        
+        print(f"Starting/resuming from task {start_task}", flush=True)
+        
         for task_idx in range(start_task, len(self.task_configs)):
             task_config = self.task_configs[task_idx]
             task_name = task_config.name
             
             # Check if we should resume for this specific task
-            should_resume = (resume_from_checkpoint and task_idx == start_task)
+            should_resume = (resume_from_checkpoint and task_idx == start_task and task_idx == self.current_task_idx)
 
             # Load datasets
             train_dataset = load_task_dataset(task_config, split="train[:80%]")
@@ -742,7 +760,8 @@ class CLTrainer:
             )
 
             # Evaluate on previous tasks before training
-            if task_idx > 0:
+            # Skip if resuming and this task is just starting (evaluations already done)
+            if task_idx > 0 and not (should_resume and self.start_epoch == 0 and self.start_batch == 0):
                 print("\nEvaluating on previous tasks...")
                 for prev_idx in range(task_idx):
                     prev_config = self.task_configs[prev_idx]
