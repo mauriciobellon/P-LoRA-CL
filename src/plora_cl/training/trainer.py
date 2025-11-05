@@ -278,15 +278,15 @@ class CLTrainer:
         print(f"Checkpoint metadata: task={self.current_task_idx}, epoch={self.start_epoch}, batch={self.start_batch}", flush=True)
         print(f"Trained tasks: {self.trained_tasks}", flush=True)
 
-    def load_checkpoint(self, checkpoint_path: str):
+    def _load_checkpoint_models(self, checkpoint_path: str):
         """
-        Load full checkpoint state (model, optimizer, etc).
-        Note: Metadata should already be loaded via _load_checkpoint_metadata.
+        Load model states from checkpoint (base model, adapters, task heads, etc).
+        This is called early in train_sequence to restore models before evaluation.
         
         Args:
             checkpoint_path: Path to checkpoint file
         """
-        print(f"Loading full checkpoint from {checkpoint_path}...", flush=True)
+        print(f"Loading model states from checkpoint...", flush=True)
         checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
         
         # Restore base model
@@ -317,7 +317,23 @@ class CLTrainer:
         # Restore metrics
         self.metrics.load_state(checkpoint["metrics_state"])
         
-        print(f"Checkpoint loaded! Resuming from task {self.current_task_idx}, epoch {self.start_epoch}, batch {self.start_batch}", flush=True)
+        print(f"Model states loaded successfully!", flush=True)
+
+    def load_checkpoint(self, checkpoint_path: str):
+        """
+        Load optimizer and scheduler states from checkpoint.
+        Model states should already be loaded via _load_checkpoint_models.
+        
+        Args:
+            checkpoint_path: Path to checkpoint file
+        
+        Returns:
+            Tuple of (optimizer_state_dict, scheduler_state_dict)
+        """
+        print(f"Loading optimizer/scheduler states from {checkpoint_path}...", flush=True)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+        
+        print(f"Optimizer/scheduler states loaded!", flush=True)
         
         return checkpoint["optimizer_state_dict"], checkpoint["scheduler_state_dict"]
 
@@ -407,7 +423,8 @@ class CLTrainer:
             num_training_steps=num_training_steps,
         )
         
-        # Load checkpoint states if resuming
+        # Load optimizer/scheduler states if resuming
+        # Note: Model states already loaded in train_sequence
         if resume_from_checkpoint:
             latest_checkpoint = self.get_latest_checkpoint()
             optimizer_state, scheduler_state = self.load_checkpoint(str(latest_checkpoint))
@@ -684,12 +701,16 @@ class CLTrainer:
         
         # Check for existing checkpoint if resume requested
         resume_from_checkpoint = False
+        latest_checkpoint_path = None
         if resume:
             latest_checkpoint = self.get_latest_checkpoint()
             if latest_checkpoint:
                 print(f"Found checkpoint: {latest_checkpoint}", flush=True)
-                # Load checkpoint early to get correct task index
-                self._load_checkpoint_metadata(str(latest_checkpoint))
+                latest_checkpoint_path = str(latest_checkpoint)
+                # Load checkpoint metadata early to get correct task index
+                self._load_checkpoint_metadata(latest_checkpoint_path)
+                # Load full checkpoint state (models, adapters) before starting
+                self._load_checkpoint_models(latest_checkpoint_path)
                 resume_from_checkpoint = True
             else:
                 print("No checkpoint found, starting from scratch", flush=True)
