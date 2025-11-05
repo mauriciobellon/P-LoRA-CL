@@ -257,35 +257,37 @@ class CLTrainer:
                 old_checkpoint.unlink()
                 print(f"Removed old checkpoint: {old_checkpoint.name}", flush=True)
 
-    def load_checkpoint(self, checkpoint_path: str):
+    def _load_checkpoint_metadata(self, checkpoint_path: str):
         """
-        Load a training checkpoint and resume training.
+        Load only metadata from checkpoint (task index, trained tasks, etc).
+        Used to determine where to resume without loading full model state.
         
         Args:
             checkpoint_path: Path to checkpoint file
         """
-        print(f"Loading checkpoint from {checkpoint_path}...", flush=True)
+        print(f"Loading checkpoint metadata from {checkpoint_path}...", flush=True)
         checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
         
-        # Restore training state
+        # Restore only training state metadata
         self.global_step = checkpoint["global_step"]
         self.current_task_idx = checkpoint["task_idx"]
-        saved_epoch = checkpoint["epoch"]
-        saved_batch = checkpoint["batch_idx"]
+        self.start_epoch = checkpoint["epoch"]
+        self.start_batch = checkpoint["batch_idx"] + 1
         self.trained_tasks = checkpoint["trained_tasks"]
         
-        # Determine if task is complete by checking the batch number
-        # If we saved at the end of the last epoch, the task is done
-        self.start_batch = saved_batch + 1
-        self.start_epoch = saved_epoch
+        print(f"Checkpoint metadata: task={self.current_task_idx}, epoch={self.start_epoch}, batch={self.start_batch}", flush=True)
+        print(f"Trained tasks: {self.trained_tasks}", flush=True)
+
+    def load_checkpoint(self, checkpoint_path: str):
+        """
+        Load full checkpoint state (model, optimizer, etc).
+        Note: Metadata should already be loaded via _load_checkpoint_metadata.
         
-        # Check if we finished the last epoch
-        # (saved on last batch of last epoch means move to next task)
-        if saved_epoch == self.epochs - 1:
-            # We're on the last epoch, check if we finished it
-            # batch_idx == len(train_loader) - 1 would mean we finished
-            # But we don't have train_loader here, so we'll check in train_task
-            pass
+        Args:
+            checkpoint_path: Path to checkpoint file
+        """
+        print(f"Loading full checkpoint from {checkpoint_path}...", flush=True)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
         
         # Restore base model
         self.base_model.base_model.load_state_dict(checkpoint["base_model_state_dict"])
@@ -686,7 +688,8 @@ class CLTrainer:
             latest_checkpoint = self.get_latest_checkpoint()
             if latest_checkpoint:
                 print(f"Found checkpoint: {latest_checkpoint}", flush=True)
-                # Don't load here, will load in train_task
+                # Load checkpoint early to get correct task index
+                self._load_checkpoint_metadata(str(latest_checkpoint))
                 resume_from_checkpoint = True
             else:
                 print("No checkpoint found, starting from scratch", flush=True)
