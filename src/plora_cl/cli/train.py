@@ -5,6 +5,7 @@ import yaml
 from pathlib import Path
 
 from ..training.trainer import CLTrainer
+from ..training.baselines import JointTrainingTrainer
 
 
 def train_command(args):
@@ -16,8 +17,11 @@ def train_command(args):
     else:
         config = {}
 
+    # Choose trainer class based on joint training flag
+    trainer_class = JointTrainingTrainer if args.joint_training else CLTrainer
+
     # Create trainer with config
-    trainer = CLTrainer(
+    trainer = trainer_class(
         model_name=config.get("model_name", args.model_name),
         device=config.get("device", args.device),
         experiment_dir=config.get("experiment_dir", args.experiment_dir),
@@ -195,17 +199,25 @@ def main():
         help="Disable lateral connections",
     )
 
+    # Joint training flag
+    parser.add_argument(
+        "--joint-training",
+        action="store_true",
+        default=False,
+        help="Use joint training (upper bound, not for CL)",
+    )
+
     # Checkpointing config
     parser.add_argument(
         "--checkpoint-every",
         type=int,
-        default=100,
+        default=1000,
         help="Save checkpoint every N steps (0 to disable)",
     )
     parser.add_argument(
         "--keep-last-n-checkpoints",
         type=int,
-        default=3,
+        default=1,
         help="Keep only last N checkpoints",
     )
     parser.add_argument(

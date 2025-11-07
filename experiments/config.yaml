@@ -1,37 +1,36 @@
-# Example experiment configuration
-
 model_name: "distilbert-base-uncased"
 device: "auto"
-experiment_dir: "experiments"
-experiment_name: "baseline"
 seed: 42
 
-# Training config
+# Treinamento
 batch_size: 32
 learning_rate: 1e-4
 epochs: 3
+max_grad_norm: 1.0
+warmup_ratio: 0.1
 
-# LoRA config
+# LoRA
 lora_r: 8
 lora_alpha: 16
+lora_dropout: 0.05
 
-# Regularization
+# Regularização
 lambda_ortho: 0.1
 lambda_ewc: 100.0
 
-# Replay
+# Replay gerativo
 replay_ratio: 0.2
+generation_model: "gpt2"
+max_gen_length: 50
+temperature: 0.7
+top_p: 0.9
 
-# Components
+# Componentes (flags booleanas)
 use_ewc: true
 use_orthogonal: true
 use_replay: true
 use_lateral: false
 
 # Checkpointing
-# Save checkpoint every N steps (0 to disable)
 checkpoint_every: 1000
-# Keep only last N checkpoints to save disk space
-keep_last_n_checkpoints: 1
-
-
+keep_last_n_checkpoints: 3

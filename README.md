@@ -1,8 +1,7 @@
 # P-LoRA-CL: Progressive LoRA with Orthogonal Constraints for Continual Learning
 
-**Status: ✅ Projeto Completamente Implementado e Funcional**
-
 Este projeto implementa uma arquitetura híbrida para aprendizado contínuo em PLN que combina:
+
 - 🔧 **Modularização progressiva** inspirada em PNN (através de adaptadores LoRA específicos por tarefa)
 - 🎯 **Adaptadores LoRA com restrições ortogonais** (O-LoRA) para isolamento entre tarefas
 - 🧠 **Consolidação Elástica de Pesos** (EWC) para proteção de conhecimento crítico
@@ -23,7 +22,9 @@ uv sync
 O paper propõe executar os seguintes experimentos em ordem para validar a arquitetura P-LoRA-CL:
 
 #### **1. Baseline: Fine-tuning Sequencial (Lower Bound)**
+
 Demonstra o esquecimento catastrófico sem técnicas de CL.
+
 ```bash
 uv run python -m plora_cl.cli.train \
   --experiment-name baseline_finetune \
@@ -31,7 +32,9 @@ uv run python -m plora_cl.cli.train \
 ```
 
 #### **2. Baseline: LoRA Sequencial (Intermediário)**
+
 Mostra eficiência paramétrica do LoRA mas sem isolamento entre tarefas.
+
 ```bash
 uv run python -m plora_cl.cli.train \
   --experiment-name baseline_lora \
@@ -39,16 +42,19 @@ uv run python -m plora_cl.cli.train \
 ```
 
 #### **3. Joint Training (Upper Bound)**
+
 Referência teórica de desempenho máximo (não realista para CL).
+
 ```bash
-# Nota: Joint training usa uma classe especial de trainer
-# Este comando será atualizado quando o JointTrainingTrainer estiver completo
-echo "Joint training ainda em desenvolvimento - usar manualmente"
+uv run python -m plora_cl.cli.train \
+  --experiment-name joint_training \
+  --joint-training
 ```
 
 #### **4. Ablaçoes Sistemáticas (Análise de Componentes)**
 
 **4.1 Sem O-LoRA (LoRA padrão):**
+
 ```bash
 uv run python -m plora_cl.cli.train \
   --experiment-name ablation_no_olora \
@@ -56,6 +62,7 @@ uv run python -m plora_cl.cli.train \
 ```
 
 **4.2 Sem EWC:**
+
 ```bash
 uv run python -m plora_cl.cli.train \
   --experiment-name ablation_no_ewc \
@@ -63,6 +70,7 @@ uv run python -m plora_cl.cli.train \
 ```
 
 **4.3 Sem Replay Gerativo:**
+
 ```bash
 uv run python -m plora_cl.cli.train \
   --experiment-name ablation_no_replay \
@@ -70,6 +78,7 @@ uv run python -m plora_cl.cli.train \
 ```
 
 **4.4 Sem Conexões Laterais:**
+
 ```bash
 uv run python -m plora_cl.cli.train \
   --experiment-name ablation_no_lateral \
@@ -77,7 +86,9 @@ uv run python -m plora_cl.cli.train \
 ```
 
 #### **5. P-LoRA-CL Completo (Proposta Principal)**
+
 Todas as técnicas integradas conforme metodologia do paper.
+
 ```bash
 uv run python -m plora_cl.cli.train \
   --experiment-name full_plora_cl \
@@ -87,9 +98,10 @@ uv run python -m plora_cl.cli.train \
 ### 🔄 **Workflow Recomendado**
 
 ```bash
-# 1. Executar baselines sequenciais
+# 1. Executar baselines e upper bound
 uv run python -m plora_cl.cli.train --experiment-name baseline_finetune --no-ewc --no-orthogonal --no-replay --no-lateral
 uv run python -m plora_cl.cli.train --experiment-name baseline_lora --no-ewc --no-replay --no-lateral
+uv run python -m plora_cl.cli.train --experiment-name joint_training --joint-training
 
 # 2. Executar ablações sistemáticas (uma por vez)
 uv run python -m plora_cl.cli.train --experiment-name ablation_no_olora --no-orthogonal
@@ -102,8 +114,8 @@ uv run python -m plora_cl.cli.train --experiment-name full_plora_cl --use-ewc --
 
 # 4. Gerar visualizações comparativas
 uv run python -m plora_cl.cli.visualize \
-  --compare-experiments baseline_finetune baseline_lora ablation_no_olora ablation_no_ewc ablation_no_replay ablation_no_lateral full_plora_cl \
-  --comparison-names "Fine-tune" "LoRA Seq" "-O-LoRA" "-EWC" "-Replay" "-Lateral" "Full P-LoRA-CL" \
+  --compare-experiments baseline_finetune baseline_lora joint_training ablation_no_olora ablation_no_ewc ablation_no_replay ablation_no_lateral full_plora_cl \
+  --comparison-names "Fine-tune" "LoRA Seq" "Joint Train" "-O-LoRA" "-EWC" "-Replay" "-Lateral" "Full P-LoRA-CL" \
   --output-dir plots/full_comparison
 ```
 
@@ -113,10 +125,11 @@ uv run python -m plora_cl.cli.visualize \
 
 Após executar todos os experimentos, você deve observar:
 
-1. **Baseline Fine-tune**: ACC baixo (~60-70%), BWT muito negativo, Forgetting alto
-2. **Baseline LoRA**: ACC melhor que fine-tune, BWT ainda negativo, Forgetting moderado
-3. **Ablaçoes**: Cada ablação mostra degradação em alguma métrica específica
-4. **Full P-LoRA-CL**: ACC alto (~85-95%), BWT próximo de 0, Forgetting próximo de 0
+1. **Joint Training**: ACC alto (~95-98%), BWT = 0, Forgetting = 0 (upper bound teórico)
+2. **Baseline Fine-tune**: ACC baixo (~60-70%), BWT muito negativo, Forgetting alto
+3. **Baseline LoRA**: ACC melhor que fine-tune, BWT ainda negativo, Forgetting moderado
+4. **Ablaçoes**: Cada ablação mostra degradação em alguma métrica específica
+5. **Full P-LoRA-CL**: ACC alto (~85-95%), BWT próximo de 0, Forgetting próximo de 0
 
 #### **Métricas Principais a Comparar**
 
@@ -129,19 +142,21 @@ Após executar todos os experimentos, você deve observar:
 
 ```bash
 # Ver métricas finais de todos os experimentos
-for exp in baseline_finetune baseline_lora ablation_* full_plora_cl; do
+for exp in baseline_finetune baseline_lora joint_training ablation_* full_plora_cl; do
   echo "=== $exp ==="
   cat experiments/$exp/results/final_results.json | grep -E "(average_accuracy|backward_transfer|forgetting)"
 done
 
-# Comparação visual
+# Comparação visual completa
 uv run python -m plora_cl.cli.visualize \
-  --compare-experiments baseline_finetune baseline_lora ablation_no_olora ablation_no_ewc ablation_no_replay ablation_no_lateral full_plora_cl \
-  --comparison-names "Fine-tune" "LoRA Seq" "-O-LoRA" "-EWC" "-Replay" "-Lateral" "Full P-LoRA-CL"
+  --compare-experiments baseline_finetune baseline_lora joint_training ablation_no_olora ablation_no_ewc ablation_no_replay ablation_no_lateral full_plora_cl \
+  --comparison-names "Fine-tune" "LoRA Seq" "Joint Train" "-O-LoRA" "-EWC" "-Replay" "-Lateral" "Full P-LoRA-CL"
 ```
 
 #### **Perguntas de Pesquisa Respondidas**
 
+- **Qual o limite teórico?** `joint_training` define o upper bound
+- **Qual o custo do CL?** Compare `joint_training` vs `full_plora_cl`
 - **O-LoRA reduz interferência?** Compare `baseline_lora` vs `ablation_no_olora`
 - **EWC protege conhecimento?** Compare `ablation_no_ewc` vs `full_plora_cl`
 - **Replay reforça memória?** Compare `ablation_no_replay` vs `full_plora_cl`
@@ -156,14 +171,15 @@ O sistema salva automaticamente checkpoints durante o treinamento para permitir 
 # Configurar frequência de checkpoints
 uv run python -m plora_cl.cli.train \
   --experiment-name baseline \
-  --checkpoint-every 100 \
-  --keep-last-n-checkpoints 3
+  --checkpoint-every 1000 \
+  --keep-last-n-checkpoints 1
 
 # Retomar de checkpoint
 uv run python -m plora_cl.cli.train --experiment-name baseline --resume
 ```
 
 Os checkpoints são salvos em `experiments/<experiment-name>/checkpoints/` e incluem:
+
 - Estado do modelo e adaptadores LoRA
 - Estado do otimizador e scheduler
 - Métricas de avaliação
@@ -190,6 +206,7 @@ uv run python -m plora_cl.cli.visualize \
 ```
 
 **Gráficos Gerados:**
+
 - 📈 Evolução da acurácia por tarefa ao longo da sequência
 - 📊 Comparação de métricas agregadas (ACC, BWT, FWT, Forgetting)
 - 💰 Comparação de custos computacionais (tempo, VRAM, parâmetros)
@@ -197,13 +214,14 @@ uv run python -m plora_cl.cli.visualize \
 - 🔄 Matriz de acurácia R_{i,j}
 
 **Tabelas LaTeX Geradas:**
+
 - 📄 Métricas resumidas com desvios padrão
 - 📊 Comparação abrangente entre métodos
 - 📈 Matriz de acurácia completa
 
 ## Estrutura do Projeto
 
-```
+```bash
 src/plora_cl/
 ├── cli/            # Interface de linha de comando
 │   ├── train.py    # Comando principal de treinamento
@@ -242,8 +260,8 @@ Exemplo completo em `experiments/config.yaml`:
 
 ```yaml
 # Modelo e ambiente
-model_name: "distilbert-base-uncased"  # ou "bert-base-uncased"
-device: "auto"                         # auto, cpu, cuda
+model_name: "distilbert-base-uncased"
+device: "auto"
 seed: 42
 
 # Treinamento
@@ -254,30 +272,30 @@ max_grad_norm: 1.0
 warmup_ratio: 0.1
 
 # LoRA
-lora_r: 8                              # Rank dos adaptadores
-lora_alpha: 16                         # Fator de escala LoRA
+lora_r: 8
+lora_alpha: 16
 lora_dropout: 0.05
 
 # Regularização
-lambda_ortho: 0.1                      # Peso da ortogonalidade O-LoRA
-lambda_ewc: 100.0                      # Peso do EWC
+lambda_ortho: 0.1
+lambda_ewc: 100.0
 
 # Replay gerativo
-replay_ratio: 0.2                      # Fração do batch com replay
-generation_model: "gpt2"               # Modelo para geração
-max_gen_length: 50                     # Comprimento máximo gerado
-temperature: 0.7                       # Temperatura de geração
-top_p: 0.9                            # Nucleus sampling
+replay_ratio: 0.2
+generation_model: "gpt2"
+max_gen_length: 50
+temperature: 0.7
+top_p: 0.9
 
 # Componentes (flags booleanas)
-use_ewc: true                          # Usar EWC
-use_orthogonal: true                   # Usar O-LoRA
-use_replay: true                       # Usar replay gerativo
-use_lateral: false                     # Usar conexões laterais
+use_ewc: true
+use_orthogonal: true
+use_replay: true
+use_lateral: false
 
 # Checkpointing
-checkpoint_every: 1000                 # Salvar a cada N steps
-keep_last_n_checkpoints: 3             # Manter últimos N checkpoints
+checkpoint_every: 1000
+keep_last_n_checkpoints: 3
 ```
 
 ### Flags de AblaÇÃO via CLI
@@ -322,6 +340,7 @@ Um experimento completo foi executado com **todas as técnicas habilitadas** (O-
 - **Forgetting**: 0.0 (sem esquecimento!)
 
 **Resultados por tarefa:**
+
 - AG News: 92.91% (mantido)
 - Yelp Polarity: 96.69% (mantido)
 - Amazon Reviews: 95.74% (mantido)
@@ -331,27 +350,16 @@ Um experimento completo foi executado com **todas as técnicas habilitadas** (O-
 ### Arquivos de Resultados
 
 Os resultados são salvos automaticamente em `experiments/<nome>/results/`:
+
 - `final_results.json`: Todas as métricas calculadas
 - `accuracy_matrix.npy`: Matriz R_{i,j} completa
 - `f1_matrix.npy`: Matrizes F1 por tarefa
 - `computational_costs.json`: Custos computacionais
 
-## Validação e Testes
-
-```bash
-# Verificar imports e funcionalidade básica
-uv run python -c "from src.plora_cl.training.baselines import JointTrainingTrainer; print('✅ Sistema funcional')"
-
-# Executar testes (quando implementados)
-uv run pytest tests -q --cov=plora_cl
-
-# Validar CLI
-uv run python -m plora_cl.cli.train --help
-```
-
 ## Status da Implementação
 
 ### ✅ **Completamente Implementado**
+
 - 🔧 **Arquitetura Híbrida**: PNN via LoRA + O-LoRA + EWC + Replay Gerativo + Conexões Laterais
 - 🎯 **CLI Completo**: Todas as flags de ablação funcionais
 - 📊 **Visualização Abrangente**: Plots múltiplos + tabelas LaTeX
@@ -360,6 +368,7 @@ uv run python -m plora_cl.cli.train --help
 - 🎲 **Reprodutibilidade**: Seeds fixos + configuração determinística
 
 ### 📋 **Recursos Avançados**
+
 - **3 Baselines de Comparação**: Fine-tuning, LoRA sequencial, Joint training
 - **Replay Gerativo Real**: Geração com GPT-2 + prompts estruturados
 - **Conexões Laterais**: Fusão com gating entre tarefas
@@ -381,8 +390,8 @@ Se usar este código em seu trabalho, cite:
 ```bibtex
 @misc{plora-cl-2024,
   title={P-LoRA-CL: Progressive LoRA with Orthogonal Constraints for Continual Learning},
-  author={Your Name},
-  year={2024},
-  url={https://github.com/your-repo/P-LoRA-CL}
+  author={Mauricio Bellon},
+  year={2025},
+  url={https://github.com/mauriciobellon/P-LoRA-CL}
 }
 ```
