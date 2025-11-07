@@ -188,7 +188,13 @@ def main():
         default=False,
         help="Use lateral connections",
     )
-    
+    parser.add_argument(
+        "--no-lateral",
+        dest="use_lateral",
+        action="store_false",
+        help="Disable lateral connections",
+    )
+
     # Checkpointing config
     parser.add_argument(
         "--checkpoint-every",
@@ -215,5 +221,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

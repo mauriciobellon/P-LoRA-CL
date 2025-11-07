@@ -93,6 +93,7 @@ class CLTrainer:
             model_name=model_name,
             device=str(self.device),
             freeze_base=True,
+            use_lateral_connections=use_lateral,
         ).to_device(str(self.device))
 
         # Initialize LoRA adapter manager
@@ -152,7 +153,7 @@ class CLTrainer:
         self.current_task_idx = 0
         self.trained_tasks: List[str] = []
         self.seed = seed
-        
+
         # Checkpointing
         self.checkpoint_every = checkpoint_every
         self.keep_last_n_checkpoints = keep_last_n_checkpoints
@@ -181,7 +182,7 @@ class CLTrainer:
     ):
         """
         Save a training checkpoint.
-        
+
         Args:
             task_idx: Current task index
             epoch: Current epoch
@@ -191,7 +192,7 @@ class CLTrainer:
             loss: Current loss value
         """
         checkpoint_path = self.checkpoint_dir / f"checkpoint_task{task_idx}_epoch{epoch}_batch{batch_idx}.pt"
-        
+
         checkpoint = {
             "global_step": self.global_step,
             "task_idx": task_idx,
@@ -205,37 +206,37 @@ class CLTrainer:
             "metrics_state": self.metrics.get_state(),
             "current_task_idx": self.current_task_idx,  # Add for better resume logic
         }
-        
+
         # Save base model state
         checkpoint["base_model_state_dict"] = self.base_model.base_model.state_dict()
-        
+
         # Save task heads
         checkpoint["task_heads"] = {
             name: head.state_dict()
             for name, head in self.base_model.task_heads.items()
         }
-        
+
         # Save adapter states
         checkpoint["adapter_states"] = self.adapter_manager.get_all_adapter_states()
         checkpoint["adapter_config"] = {
             "r": self.adapter_manager.r,
             "lora_alpha": self.adapter_manager.lora_alpha,
         }
-        
+
         # Save EWC state if enabled
         if self.ewc is not None:
             checkpoint["ewc_state"] = self.ewc.get_state()
-        
+
         # Save replay generator state if enabled
         if self.replay_generator is not None:
             checkpoint["replay_state"] = self.replay_generator.get_state()
-        
+
         torch.save(checkpoint, checkpoint_path)
         print(f"Checkpoint saved: {checkpoint_path}", flush=True)
-        
+
         # Clean up old checkpoints for this task only
         self._cleanup_old_checkpoints(task_idx)
-        
+
         return checkpoint_path
 
     def _cleanup_old_checkpoints(self, current_task_idx: int):
@@ -245,13 +246,13 @@ class CLTrainer:
         """
         if self.keep_last_n_checkpoints <= 0:
             return
-        
+
         # Only clean up checkpoints for the current task
         task_checkpoints = sorted(
             self.checkpoint_dir.glob(f"checkpoint_task{current_task_idx}_*.pt"),
             key=lambda x: x.stat().st_mtime
         )
-        
+
         if len(task_checkpoints) > self.keep_last_n_checkpoints:
             for old_checkpoint in task_checkpoints[:-self.keep_last_n_checkpoints]:
                 old_checkpoint.unlink()
@@ -261,20 +262,20 @@ class CLTrainer:
         """
         Load only metadata from checkpoint (task index, trained tasks, etc).
         Used to determine where to resume without loading full model state.
-        
+
         Args:
             checkpoint_path: Path to checkpoint file
         """
         print(f"Loading checkpoint metadata from {checkpoint_path}...", flush=True)
         checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
-        
+
         # Restore only training state metadata
         self.global_step = checkpoint["global_step"]
         self.current_task_idx = checkpoint["task_idx"]
         self.start_epoch = checkpoint["epoch"]
         self.start_batch = checkpoint["batch_idx"] + 1
         self.trained_tasks = checkpoint["trained_tasks"]
-        
+
         print(f"Checkpoint metadata: task={self.current_task_idx}, epoch={self.start_epoch}, batch={self.start_batch}", flush=True)
         print(f"Trained tasks: {self.trained_tasks}", flush=True)
 
@@ -282,16 +283,16 @@ class CLTrainer:
         """
         Load model states from checkpoint (base model, adapters, task heads, etc).
         This is called early in train_sequence to restore models before evaluation.
-        
+
         Args:
             checkpoint_path: Path to checkpoint file
         """
         print(f"Loading model states from checkpoint...", flush=True)
         checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
-        
+
         # Restore base model
         self.base_model.base_model.load_state_dict(checkpoint["base_model_state_dict"])
-        
+
         # Restore task heads
         for name, state_dict in checkpoint["task_heads"].items():
             if name not in self.base_model.task_heads:
@@ -299,48 +300,48 @@ class CLTrainer:
                 task_config = self.task_configs[task_idx]
                 self.base_model.add_task_head(name, task_config.num_classes)
             self.base_model.task_heads[name].load_state_dict(state_dict)
-        
+
         # Restore adapters
         for task_name, adapter_state in checkpoint["adapter_states"].items():
             if task_name not in self.adapter_manager.adapters:
                 self.adapter_manager.add_task_adapter(task_name)
             self.adapter_manager.load_adapter_state(task_name, adapter_state)
-        
+
         # Restore EWC state
         if self.ewc is not None and "ewc_state" in checkpoint:
             self.ewc.load_state(checkpoint["ewc_state"])
-        
+
         # Restore replay generator state
         if self.replay_generator is not None and "replay_state" in checkpoint:
             self.replay_generator.load_state(checkpoint["replay_state"])
-        
+
         # Restore metrics
         self.metrics.load_state(checkpoint["metrics_state"])
-        
+
         print(f"Model states loaded successfully!", flush=True)
 
     def load_checkpoint(self, checkpoint_path: str):
         """
         Load optimizer and scheduler states from checkpoint.
         Model states should already be loaded via _load_checkpoint_models.
-        
+
         Args:
             checkpoint_path: Path to checkpoint file
-        
+
         Returns:
             Tuple of (optimizer_state_dict, scheduler_state_dict)
         """
         print(f"Loading optimizer/scheduler states from {checkpoint_path}...", flush=True)
         checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
-        
+
         print(f"Optimizer/scheduler states loaded!", flush=True)
-        
+
         return checkpoint["optimizer_state_dict"], checkpoint["scheduler_state_dict"]
 
     def get_latest_checkpoint(self) -> Optional[Path]:
         """
         Find the latest checkpoint file.
-        
+
         Returns:
             Path to latest checkpoint or None if no checkpoints exist
         """
@@ -382,7 +383,7 @@ class CLTrainer:
             print(f"LoRA adapter added successfully!", flush=True)
         else:
             peft_model = self.adapter_manager.adapters[task_name]
-            
+
         self.adapter_manager.activate_task(task_name)
 
         # Freeze previous adapters
@@ -422,7 +423,7 @@ class CLTrainer:
             num_warmup_steps=num_warmup_steps,
             num_training_steps=num_training_steps,
         )
-        
+
         # Load optimizer/scheduler states if resuming
         # Note: Model states already loaded in train_sequence
         if resume_from_checkpoint:
@@ -430,7 +431,7 @@ class CLTrainer:
             optimizer_state, scheduler_state = self.load_checkpoint(str(latest_checkpoint))
             optimizer.load_state_dict(optimizer_state)
             scheduler.load_state_dict(scheduler_state)
-            
+
             # Check if we need to skip this task entirely (already completed)
             # If we're on the last epoch and the start batch is at/past the end, task is done
             if self.start_epoch >= self.epochs - 1 and self.start_batch >= len(train_loader):
@@ -456,7 +457,7 @@ class CLTrainer:
         # Training loop
         peft_model.train()
         start_time = time.time()
-        
+
         # Determine starting point
         start_epoch = self.start_epoch if resume_from_checkpoint else 0
         print(f"\nStarting training for {self.epochs} epochs with {len(train_loader)} batches per epoch...", flush=True)
@@ -467,10 +468,10 @@ class CLTrainer:
             print(f"\n--- Epoch {epoch + 1}/{self.epochs} ---", flush=True)
             epoch_loss = 0.0
             num_batches = 0
-            
+
             # Determine starting batch
             start_batch = self.start_batch if (resume_from_checkpoint and epoch == start_epoch) else 0
-            
+
             # If starting batch is at or beyond the end of the dataloader, skip this epoch
             if start_batch >= len(train_loader):
                 print(f"  Epoch {epoch + 1} already completed, skipping...", flush=True)
@@ -480,7 +481,7 @@ class CLTrainer:
                 # Skip batches if resuming from checkpoint
                 if batch_idx < start_batch:
                     continue
-                    
+
                 if batch_idx % 10 == 0:
                     print(f"  Batch {batch_idx}/{len(train_loader)} (global step: {self.global_step})", end='\r', flush=True)
 
@@ -504,17 +505,32 @@ class CLTrainer:
                         )
                         replay_samples.extend(replay_batch)
 
-                # Forward pass through base model
-                base_outputs = peft_model.base_model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    output_hidden_states=True,
-                )
+                # Forward pass - use lateral connections if enabled
+                if self.use_lateral and self.trained_tasks:
+                    # Get previous task adapters for lateral connections
+                    previous_adapters = {}
+                    for prev_task in self.trained_tasks:
+                        prev_adapter = self.adapter_manager.get_adapter(prev_task)
+                        if prev_adapter is not None:
+                            previous_adapters[prev_task] = prev_adapter
 
-                # Get logits from task head
-                # Use last_hidden_state from BaseModelOutput
-                pooled_output = base_outputs.last_hidden_state[:, 0]
-                logits = self.base_model.task_heads[task_name](pooled_output)
+                    # Use forward with lateral input
+                    logits = self.base_model.forward_with_lateral_input(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        task_name=task_name,
+                        current_adapter=peft_model,
+                        previous_adapters=previous_adapters,
+                    )
+                else:
+                    # Standard forward pass
+                    base_outputs = peft_model.base_model(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        output_hidden_states=True,
+                    )
+                    pooled_output = base_outputs.last_hidden_state[:, 0]
+                    logits = self.base_model.task_heads[task_name](pooled_output)
 
                 # Compute orthogonal loss
                 orthogonal_loss = None
@@ -546,7 +562,7 @@ class CLTrainer:
                     scheduler.step()
                     optimizer.zero_grad()
                     self.global_step += 1
-                    
+
                     # Save checkpoint periodically
                     if self.checkpoint_every > 0 and self.global_step % self.checkpoint_every == 0:
                         self.save_checkpoint(
@@ -573,7 +589,7 @@ class CLTrainer:
                     task_name=task_name,
                     metrics={"loss": avg_loss},
                 )
-                
+
                 # Save checkpoint at end of epoch
                 if self.checkpoint_every > 0:
                     self.save_checkpoint(
@@ -586,7 +602,7 @@ class CLTrainer:
                     )
 
         training_time = time.time() - start_time
-        
+
         # Reset start epoch and batch for next task
         self.start_epoch = 0
         self.start_batch = 0
@@ -654,15 +670,45 @@ class CLTrainer:
                 attention_mask = batch["attention_mask"].to(self.device)
                 labels = batch["labels"].to(self.device)
 
-                # Forward pass through base model
-                base_outputs = peft_model.base_model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    output_hidden_states=True,
-                )
+                # Forward pass - use lateral connections if enabled
+                if self.use_lateral and current_task_idx > task_idx:
+                    # During evaluation of previous tasks, use lateral connections if enabled
+                    # Get previous task adapters (excluding current task being evaluated)
+                    previous_adapters = {}
+                    for prev_task_idx in range(task_idx):
+                        prev_task_name = self.task_configs[prev_task_idx].name
+                        prev_adapter = self.adapter_manager.get_adapter(prev_task_name)
+                        if prev_adapter is not None:
+                            previous_adapters[prev_task_name] = prev_adapter
 
-                pooled_output = base_outputs.last_hidden_state[:, 0]
-                logits = self.base_model.task_heads[task_name](pooled_output)
+                    if previous_adapters:
+                        # Use forward with lateral input
+                        logits = self.base_model.forward_with_lateral_input(
+                            input_ids=input_ids,
+                            attention_mask=attention_mask,
+                            task_name=task_name,
+                            current_adapter=peft_model,
+                            previous_adapters=previous_adapters,
+                        )
+                    else:
+                        # No previous adapters available, use standard forward
+                        base_outputs = peft_model.base_model(
+                            input_ids=input_ids,
+                            attention_mask=attention_mask,
+                            output_hidden_states=True,
+                        )
+                        pooled_output = base_outputs.last_hidden_state[:, 0]
+                        logits = self.base_model.task_heads[task_name](pooled_output)
+                else:
+                    # Standard forward pass
+                    base_outputs = peft_model.base_model(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        output_hidden_states=True,
+                    )
+                    pooled_output = base_outputs.last_hidden_state[:, 0]
+                    logits = self.base_model.task_heads[task_name](pooled_output)
+
                 predictions = torch.argmax(logits, dim=-1)
 
                 all_predictions.extend(predictions.cpu().numpy())
@@ -685,7 +731,7 @@ class CLTrainer:
     def train_sequence(self, resume: bool = False):
         """
         Train on the full sequence of tasks.
-        
+
         Args:
             resume: Whether to resume from latest checkpoint
         """
@@ -698,7 +744,7 @@ class CLTrainer:
         print(f"Epochs per task: {self.epochs}", flush=True)
         print(f"LoRA rank: {self.adapter_manager.r}, alpha: {self.adapter_manager.lora_alpha}", flush=True)
         print("="*80 + "\n", flush=True)
-        
+
         # Check for existing checkpoint if resume requested
         resume_from_checkpoint = False
         latest_checkpoint_path = None
@@ -738,20 +784,20 @@ class CLTrainer:
 
         # Train each task sequentially
         start_task = self.current_task_idx if resume_from_checkpoint else 0
-        
+
         # If resuming, check if current task is completed and move to next
         if resume_from_checkpoint and start_task < len(self.task_configs):
             current_task_name = self.task_configs[start_task].name
             if current_task_name in self.trained_tasks:
                 print(f"Task {start_task} ({current_task_name}) already in trained_tasks, moving to next", flush=True)
                 start_task += 1
-        
+
         print(f"Starting/resuming from task {start_task}", flush=True)
-        
+
         for task_idx in range(start_task, len(self.task_configs)):
             task_config = self.task_configs[task_idx]
             task_name = task_config.name
-            
+
             # Check if we should resume for this specific task
             should_resume = (resume_from_checkpoint and task_idx == start_task and task_idx == self.current_task_idx)
 
